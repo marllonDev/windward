@@ -1,0 +1,22 @@
+Windward
+Copyright 2026 Windward contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+This product includes software developed by third parties, redistributed
+or depended upon under their own license terms:
+
+* Sail, developed by LakeSail (https://github.com/lakehq/sail)
+  Copyright LakeSail and contributors.
+  Licensed under the Apache License, Version 2.0.
+
+* dbt, developed by dbt Labs (https://github.com/dbt-labs/dbt-core)
+  Copyright dbt Labs, Inc. and contributors.
+  Licensed under the Apache License, Version 2.0.
+
+"LakeSail", "Sail", and "dbt" are trademarks or registered trademarks of
+their respective owners. Use of these names in this NOTICE is for
+identification and attribution purposes only and does not imply
+endorsement, sponsorship, or affiliation between Windward and the
+trademark owners.
