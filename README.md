@@ -2,8 +2,8 @@
 
 Windward is a self-hostable, Rust-native data platform built on the
 [Sail](https://github.com/lakehq/sail) compute engine and
-[dbt](https://github.com/dbt-labs/dbt-core) 2. See `NOTICE` for
-third-party attribution.
+[dbt 2](https://github.com/dbt-labs/dbt) (the Rust rewrite, not
+`dbt-labs/dbt-core`). See `NOTICE` for third-party attribution.
 
 v0 targets a single developer/demo environment running on
 [OrbStack](https://orbstack.dev) on the owner's machine. There is no
