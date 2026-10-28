@@ -41,19 +41,22 @@ image, step ordering, caching) is unverified against a real Actions run.
 
 ## Upstream engines
 
-### dbt 2 license identifier is unverified
+### dbt 2 license verified, but no exact version is pinned yet
 
-`NOTICE` and `README.md` currently attribute the product's dbt dependency to
-`dbt-labs/dbt-core` (Python dbt, Apache-2.0). The architecture (ADR-0002)
-names the actual dependency as dbt 2 / dbt Fusion, a different, Rust-based
-project. Windward's own Apache-2.0 licensing premise for anything vendored
-from dbt 2 has not been checked against that project's actual `LICENSE` file
-— there are indications parts of the dbt Fusion distribution ship under the
-Elastic License 2.0, not Apache-2.0. Until the Solution Architect or
-implementer opens the exact pinned dbt 2 repository/version and reads its
-license file, this is an open legal/compliance unknown, not a confirmed fact
-in either direction. Tracked as blocking finding `B1` on `TES-7`; unresolved
-as of this entry.
+`NOTICE` and `README.md` previously attributed the product's dbt dependency
+to `dbt-labs/dbt-core` (the archived Python implementation). This was
+corrected (`TES-9`, commit `2e84102`): the actual dependency is
+`dbt-labs/dbt`, confirmed Apache-2.0 at `main` and at the GA tag `v2.0.0`
+(2026-09-14), with the carve-out that dbt Labs' separately sold proprietary
+"dbt" product is not covered by this check — see `docs/adr/0005-dbt-2-license-verification.md`
+for the full verification. Previously tracked as blocking finding `B1` on
+`TES-7`; resolved as of this entry.
+
+Residual, non-blocking gap: M0 is scaffold-only and pins no exact dbt 2
+commit or tag anywhere in the repository. Whichever commit/tag actually
+gets vendored in a later milestone should be re-checked against this ADR's
+findings before vendoring, in case the license posture changes between now
+and that pin.
 
 ### Sail and dbt 2 are not yet pinned to exact versions or vendored
 
