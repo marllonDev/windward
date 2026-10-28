@@ -58,6 +58,25 @@ real content; this README will be updated at that point to document the
 single `docker compose up` command for the full engine/API/web/seed-data
 stack.
 
+## CI
+
+`.github/workflows/ci.yml` runs three jobs — lint, test, build — on every
+push and pull request. Each job is a thin wrapper around a script you can
+run yourself; there is no check that only exists in CI:
+
+| CI job | Local equivalent | What it checks |
+|---|---|---|
+| lint | `./scripts/ci-lint.sh` | shellcheck on `scripts/*.sh`, actionlint on the workflow file, no floating toolchain-version tags |
+| test | `./scripts/ci-test.sh` | the scaffold layout and toolchain pin files from `docs/adr/0001` exist |
+| build | `./scripts/ci-build.sh` | `scripts/bootstrap.sh` — the OrbStack Docker-daemon preflight check |
+
+Run everything at once with `./scripts/ci.sh`. See `docs/adr/0004` for why
+these particular checks and why nothing more at this milestone, and
+`docs/adr/0001` for the pinning policy the lint job enforces.
+
+The `build` job needs a reachable Docker daemon — on GitHub-hosted
+runners this is already there; locally, start OrbStack first.
+
 ## License
 
 Apache License 2.0. See `LICENSE`. Third-party attribution for Sail and
