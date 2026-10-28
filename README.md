@@ -15,7 +15,7 @@ cloud account and no infrastructure spend for v0.
 apps/web        frontend
 services/api    backend API
 engine/         Sail integration
-dbt/            forked dbt 2 binary + sail adapter
+dbt/            seeded dbt 2 project, profile template, sail adapter pin
 docs/adr/       architecture decision records
 docker/         container build context (Dockerfiles, compose)
 scripts/        dev tooling
