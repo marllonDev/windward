@@ -1,0 +1,15 @@
+services:
+  sail:
+    build: ./docker/sail
+    image: windward-sail:0.7.2
+    ports:
+      - "50051:50051"
+    restart: unless-stopped
+  sail-flight:
+    image: windward-sail:0.7.2
+    command: ["sail", "flight", "server", "--ip", "0.0.0.0", "--port", "32010"]
+    ports:
+      - "32010:32010"
+    depends_on:
+      - sail
+    restart: unless-stopped
