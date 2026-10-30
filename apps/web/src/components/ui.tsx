@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 type IconName =
   | "terminal" | "database" | "history" | "dbt" | "engine" | "table" | "search" | "x" | "play"
-  | "check" | "alert" | "chevron" | "folder" | "sail" | "clock" | "refresh" | "sun";
+  | "check" | "alert" | "chevron" | "folder" | "sail" | "clock" | "refresh" | "sun" | "notebook" | "upload";
 
 const PATHS: Record<IconName, ReactNode> = {
   terminal: <><path d="M4 6l5 5-5 5" /><path d="M12 17h8" /></>,
@@ -21,6 +21,8 @@ const PATHS: Record<IconName, ReactNode> = {
   sail: <><path d="M12 3v15" /><path d="M12 4c4 3 6 7 6 12h-6" /><path d="M12 8c-3 2-5 5-5 8h5" /><path d="M4 20h16" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   refresh: <><path d="M20 11a8 8 0 0 0-14-4L4 9" /><path d="M4 4v5h5" /><path d="M4 13a8 8 0 0 0 14 4l2-2" /><path d="M20 20v-5h-5" /></>,
+  notebook: <><path d="M6 3h12a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6z" /><path d="M6 3v18M10 8h5M10 12h5" /></>,
+  upload: <><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></>,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5" /></>,
 };
 

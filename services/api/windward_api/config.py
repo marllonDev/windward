@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     dbt_project_dir: Path = Path("./dbt")
     dbt_profiles_dir: Path = Path("./dbt")
     dbt_work_dir: Path = Path("./data/dbt")
+    # Sail's catalog is lost on an engine restart, so build the demo project once
+    # the engine is up and the console always has data to query.
+    dbt_auto_build: bool = True
+
+    # --- Workspace ----------------------------------------------------------
+    # SQLite file for saved queries and notebooks, and where uploads land.
+    store_path: Path | None = None
+    kernel_timeout_seconds: float = 120.0
 
     # --- Query path -------------------------------------------------------
     # Default page size for M1's synchronous query endpoint. The real result cap
@@ -85,6 +93,14 @@ class Settings(BaseSettings):
     @property
     def spark_connect_url(self) -> str:
         return f"sc://{self.sail_connect_host}:{self.spark_connect_port}"
+
+    @property
+    def resolved_store_path(self) -> Path:
+        return self.store_path or (self.data_dir / "windward.db")
+
+    @property
+    def uploads_dir(self) -> Path:
+        return self.data_dir / "uploads"
 
     @property
     def spark_connect_session_url(self) -> str:

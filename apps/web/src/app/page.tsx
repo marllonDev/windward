@@ -5,8 +5,9 @@ import { usePoll } from "@/lib/hooks";
 import { Icon, StatusBadge } from "@/components/ui";
 
 const FEATURES = [
-  { icon: "terminal", title: "SQL console", text: "Run Spark SQL on Sail and read typed results in a real grid." },
-  { icon: "database", title: "Catalog browser", text: "Walk databases, tables and columns without writing SHOW statements." },
+  { icon: "terminal", title: "SQL console", text: "Tabbed editor, saved queries, explain plans, charts and CSV export." },
+  { icon: "notebook", title: "Notebooks", text: "Mix SQL, PySpark and notes in one document, with a persistent Python kernel." },
+  { icon: "database", title: "Catalog and uploads", text: "Browse tables, preview rows, and turn a CSV, JSON or Parquet file into a table." },
   { icon: "dbt", title: "dbt project", text: "Seed, run and test models; follow streaming logs and the lineage graph." },
   { icon: "engine", title: "Engine status", text: "See exactly what the supervised Sail processes are doing, including when they die." },
 ] as const;

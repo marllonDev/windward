@@ -41,3 +41,12 @@ facts found while building it shaped the result:
   limits and is the next step if that matters.
 - Query history lives in the browser (localStorage) until the API owns it.
 - Recorded in `KNOWN-LIMITATIONS.md`.
+
+## Addendum — workspace features (2026-10-29)
+
+Saved queries and notebooks are API-owned and persisted in SQLite
+(`windward.db` on the data volume). Python notebook cells run in one persistent
+worker process per notebook (`windward_api/kernel`), connected to the shared
+Sail session. Uploads land in `data/uploads` and are registered as
+`uploads.<stem>` tables; the API re-registers them and re-runs `dbt build` when
+the engine comes up, because the memory catalog does not survive a restart.

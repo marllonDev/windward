@@ -8,6 +8,7 @@ import { Icon, StatusBadge } from "./ui";
 
 const ITEMS = [
   { href: "/console", label: "SQL console", icon: "terminal" },
+  { href: "/notebooks", label: "Notebooks", icon: "notebook" },
   { href: "/catalog", label: "Catalog", icon: "database" },
   { href: "/history", label: "Query history", icon: "history" },
   { href: "/dbt", label: "dbt project", icon: "dbt" },
@@ -49,7 +50,7 @@ export default function Nav() {
         <Icon name="sail" size={24} /> Windward
       </Link>
       {ITEMS.map((item) => (
-        <Link key={item.href} href={item.href} className={`item${path === item.href ? " active" : ""}`}
+        <Link key={item.href} href={item.href} className={`item${path === item.href || path.startsWith(item.href + "/") ? " active" : ""}`}
           aria-current={path === item.href ? "page" : undefined}>
           <Icon name={item.icon} /> {item.label}
         </Link>

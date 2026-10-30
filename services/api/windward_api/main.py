@@ -16,12 +16,16 @@ from fastapi import FastAPI
 from . import __version__
 from .api import router
 from .api.dbt_routes import router as dbt_router
+from .api.workspace_routes import router as workspace_router
 from .config import Settings, get_settings
 from .dbt import DbtRunner
 from .engine.spark_connect import SparkConnectEngineClient
 from .engine.supervisor import SailSupervisor
 from .errors import install_exception_handlers
+from .kernel import KernelManager
 from .query.service import QueryService
+from .query.uploads import UploadService
+from .store import Store
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.query_service = QueryService(resolved, engine_client)
         resolved.dbt_work_dir.mkdir(parents=True, exist_ok=True)
         app.state.dbt_runner = DbtRunner(resolved)
+        app.state.store = Store(resolved.resolved_store_path)
+        app.state.kernels = KernelManager(resolved)
+        app.state.uploads = UploadService(resolved, app.state.query_service)
 
         await supervisor.start()
         if await supervisor.wait_until_running(resolved.engine_start_timeout_seconds):
@@ -64,9 +71,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "Sail did not reach a running state within %.0fs; see GET /api/v1/engine/status",
                 resolved.engine_start_timeout_seconds,
             )
+        if supervisor.is_query_path_ready():
+            # Bring uploaded files back as tables after a restart.
+            await app.state.uploads.sync()
+            if resolved.dbt_auto_build and (resolved.dbt_project_dir / "dbt_project.yml").is_file():
+                app.state.dbt_runner.start("build")
         try:
             yield
         finally:
+            await app.state.kernels.close()
+            app.state.store.close()
             engine_client.close()
             await supervisor.stop()
 
@@ -79,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_exception_handlers(app)
     app.include_router(router)
     app.include_router(dbt_router)
+    app.include_router(workspace_router)
     return app
 
 

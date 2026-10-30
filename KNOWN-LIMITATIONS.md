@@ -94,6 +94,28 @@ dbt's seed loader failed with `Unsupported CAST from Decimal128(2, 1) to
 Boolean` when the CSV mixed booleans and decimals. The demo seed therefore loads
 every column as `string` and the staging model casts them.
 
+### Python notebook cells are not sandboxed
+
+Each notebook gets a persistent Python worker process inside the API container,
+running as the unprivileged `windward` user with the shared Sail session as
+`spark`. It can read and write anything that user can. That is acceptable for the
+single-user, local, unauthenticated v0 (ADR-0002) and would not be for a shared
+deployment. Cells time out after 120 s, which restarts the kernel and loses its
+variables.
+
+### Sail 0.7.2 quirks the shell works around
+
+- `CREATE TABLE ... USING csv OPTIONS (path ...)` ignores `header` and
+  `inferSchema` and yields an empty schema; uploads use `LOCATION` instead.
+- `DESCRIBE TABLE` returns no rows for file-backed tables, so the catalog reads
+  the column list from `SELECT * ... LIMIT 0`.
+- `DESCRIBE db.table` without the `TABLE` keyword is a parse error.
+
+### Tabs and query history live in the browser
+
+The console's open tabs and the query history are stored in `localStorage`.
+Saved queries and notebooks are server-side (SQLite).
+
 ## Product behavior
 
 Not yet applicable: M0 ships no application code (`apps/web`, `services/api`,

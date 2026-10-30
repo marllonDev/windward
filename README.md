@@ -69,6 +69,14 @@ container and are never published. The seeded dbt project is in `dbt/`: open the
 SQL console. dbt 2.0.8 is installed in the image, but the project runs on the
 `dbt-sail` runner because dbt 2 has no Sail adapter (`docs/adr/0006`).
 
+## What you can do
+
+- **SQL console.** Tabbed editor, Ctrl/⌘+Enter, run a selection, **Explain** plans, **Save** queries, results as a table or a bar/line/pie **chart**, **CSV export**.
+- **Notebooks.** SQL, Python (PySpark with `spark` ready and variables kept between cells) and Markdown cells; Run all, Shift+Enter, autosave, restartable kernel. Stored in SQLite on the data volume.
+- **Catalog and uploads.** Browse databases and tables, see columns, a 100-row preview and table details, and **upload a CSV, TSV, JSON, JSON Lines or Parquet file** to get a queryable `uploads.<name>` table.
+- **dbt project.** Seed, run, test and build from the browser, follow streaming logs and the lineage graph. The demo project builds automatically on start.
+- **Engine status.** Live state of the supervised Sail processes, restarts and log tails.
+
 Stop with `docker compose down` (add `-v` to drop the data volume).
 
 ## CI

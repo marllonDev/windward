@@ -12,15 +12,19 @@ function cell(row: unknown[], names: string[], want: string[], fallback: number)
 }
 
 export async function loadColumns(db: string, table: string): Promise<Col[]> {
-  const r = await api.query(`DESCRIBE ${db}.${table}`);
+  const r = await api.query(`DESCRIBE TABLE ${db}.${table}`);
   const names = r.columns.map((c) => c.name);
-  return r.rows
+  const described = r.rows
     .map((row) => ({ name: cell(row, names, ["col_name"], 0), type: cell(row, names, ["data_type"], 1) }))
     .filter((c) => c.name && !c.name.startsWith("#"));
+  if (described.length > 0) return described;
+  // Sail returns no rows for DESCRIBE on file-backed tables; the query schema is the truth.
+  const probe = await api.query(`SELECT * FROM ${db}.${table} LIMIT 0`, 1);
+  return probe.columns.map((c) => ({ name: c.name, type: c.type }));
 }
 
-export default function CatalogTree({ selected, onSelect, filter = "" }: {
-  selected: Selected; onSelect: (s: Selected) => void; filter?: string;
+export default function CatalogTree({ selected, onSelect, filter = "", version = 0 }: {
+  selected: Selected; onSelect: (s: Selected) => void; filter?: string; version?: number;
 }) {
   const [dbs, setDbs] = useState<string[] | null>(null);
   const [tables, setTables] = useState<Record<string, string[] | Error>>({});
@@ -49,15 +53,17 @@ export default function CatalogTree({ selected, onSelect, filter = "" }: {
 
   useEffect(() => {
     loadDbs();
-  }, [loadDbs]);
+  }, [loadDbs, version]);
 
   useEffect(() => {
     // Expand every database once so tables are visible without clicking.
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    version;
     dbs?.forEach((db) => {
       setOpen((o) => (db in o ? o : { ...o, [db]: true }));
       loadTables(db);
     });
-  }, [dbs, loadTables]);
+  }, [dbs, loadTables, version]);
 
   if (error) return <ErrorState title="Couldn't load the catalog" error={error.message} onRetry={loadDbs} />;
   if (!dbs) return <div className="caption" style={{ padding: 12 }}>Loading catalog…</div>;

@@ -33,6 +33,20 @@ export type DbtRun = {
   log: string[]; log_total: number;
 };
 
+export type SavedQuery = { id: string; name: string; sql: string; created_at: string; updated_at: string };
+export type NotebookCell = {
+  id: string; type: "sql" | "python" | "markdown"; source: string;
+  output?: CellOutput | null;
+};
+export type CellOutput = {
+  stdout?: string; error?: string | null; durationMs?: number | null;
+  result?: { type: "table"; columns: string[]; rows: unknown[][]; truncated?: boolean }
+    | { type: "text"; text: string } | null;
+};
+export type NotebookSummary = { id: string; name: string; updated_at: string; cell_count: number };
+export type Notebook = NotebookSummary & { cells: NotebookCell[] };
+export type Upload = { file: string; table: string; bytes: number };
+
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
     super(message);
@@ -60,7 +74,56 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method, cache: "no-store",
+      headers: { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (cause) {
+    throw new ApiError("NETWORK", `Cannot reach the Windward API: ${String(cause)}`);
+  }
+  if (response.status === 204) return undefined as T;
+  const parsed = await response.json().catch(() => null);
+  if (!response.ok)
+    throw new ApiError(parsed?.error?.code ?? `HTTP_${response.status}`, parsed?.error?.message ?? response.statusText);
+  return parsed as T;
+}
+
 export const api = {
+  savedQueries: () => send<SavedQuery[]>("/api/v1/saved-queries", "GET"),
+  saveQuery: (name: string, sql: string, id?: string) =>
+    send<SavedQuery>("/api/v1/saved-queries", "POST", { name, sql, id }),
+  deleteQuery: (id: string) => send<void>(`/api/v1/saved-queries/${id}`, "DELETE"),
+  notebooks: () => send<NotebookSummary[]>("/api/v1/notebooks", "GET"),
+  notebook: (id: string) => send<Notebook>(`/api/v1/notebooks/${id}`, "GET"),
+  createNotebook: (name: string, cells: NotebookCell[]) =>
+    send<Notebook>("/api/v1/notebooks", "POST", { name, cells }),
+  saveNotebook: (id: string, name: string, cells: NotebookCell[]) =>
+    send<Notebook>(`/api/v1/notebooks/${id}`, "PUT", { name, cells }),
+  deleteNotebook: (id: string) => send<void>(`/api/v1/notebooks/${id}`, "DELETE"),
+  runPython: (id: string, code: string) =>
+    send<{ stdout: string; stderr: string; error: string | null; duration_ms: number | null;
+      result: CellOutput["result"] }>(`/api/v1/notebooks/${id}/python`, "POST", { code }),
+  restartKernel: (id: string) => send<void>(`/api/v1/notebooks/${id}/kernel/restart`, "POST"),
+  uploads: () => send<Upload[]>("/api/v1/uploads", "GET"),
+  syncUploads: () => send<{ registered: number }>("/api/v1/uploads/sync", "POST"),
+  upload: async (file: File): Promise<Upload> => {
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1/uploads?name=${encodeURIComponent(file.name)}`, {
+        method: "POST", body: file, headers: { "content-type": "application/octet-stream" },
+      });
+    } catch (cause) {
+      throw new ApiError("NETWORK", `Cannot reach the Windward API: ${String(cause)}`);
+    }
+    const parsed = await response.json().catch(() => null);
+    if (!response.ok)
+      throw new ApiError(parsed?.error?.code ?? `HTTP_${response.status}`, parsed?.error?.message ?? response.statusText);
+    return parsed as Upload;
+  },
   engineStatus: () => request<EngineStatus>("/api/v1/engine/status"),
   query: (sql: string, maxRows?: number) =>
     request<QueryResult>("/api/v1/queries", {
