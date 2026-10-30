@@ -393,30 +393,41 @@ def _() -> str:
 
 @check("jobs: parameters, retries and run-from-here")
 def _() -> str:
-    call("DELETE", "/api/v1/dbt2/projects/smoke_param")
+    # The counter file is unique per run, so the retry count is not inherited from a
+    # previous execution of this script.
+    counter = f"/tmp/smoke_attempts_{int(time.time() * 1000)}"
     job = {
         "name": "smoke params",
         "parameters": [{"name": "label", "default": "alpha", "description": ""}],
         "tasks": [
             {"key": "first", "type": "sql", "config": {"sql": "select '{{ label }}' as label"}},
             {"key": "flaky", "type": "python", "depends_on": ["first"], "retries": 2, "retry_delay_seconds": 0,
-             "config": {"code": "import pathlib\np = pathlib.Path('/tmp/smoke_attempts')\nn = int(p.read_text()) + 1 if p.exists() else 1\np.write_text(str(n))\nprint('attempt', n)\nassert n >= 3, 'not yet'"}},
+             "config": {"code": (
+                 "import pathlib\n"
+                 f"p = pathlib.Path({counter!r})\n"
+                 "n = int(p.read_text()) + 1 if p.exists() else 1\n"
+                 "p.write_text(str(n))\n"
+                 "print('attempt', n)\n"
+                 "assert n >= 3, 'not yet'"
+             )}},
             {"key": "last", "type": "sql", "depends_on": ["flaky"], "config": {"sql": "select 2"}},
         ],
     }
     status, created = call("POST", "/api/v1/jobs", job)
     assert status == 201, created
-    _, run = call("POST", f"/api/v1/jobs/{created['id']}/run", {"parameters": {"label": "beta"}})
-    done = poll(f"/api/v1/job-runs/{run['id']}", lambda r: r["status"] != "running", tries=60)
-    assert done["status"] == "succeeded", [(t["key"], t["status"], t["error"]) for t in done["tasks"]]
-    first = next(t for t in done["tasks"] if t["key"] == "first")
-    assert first["output"]["rows"] == [["beta"]], first["output"]
-    flaky = next(t for t in done["tasks"] if t["key"] == "flaky")
-    assert flaky["attempt"] == 3, flaky["attempt"]
-    _, partial = call("POST", f"/api/v1/jobs/{created['id']}/run", {"only": ["last"]})
-    assert [t["key"] for t in partial["tasks"]] == ["last"], partial["tasks"]
-    poll(f"/api/v1/job-runs/{partial['id']}", lambda r: r["status"] != "running", tries=30, pause=1)
-    call("DELETE", f"/api/v1/jobs/{created['id']}")
+    try:
+        _, run = call("POST", f"/api/v1/jobs/{created['id']}/run", {"parameters": {"label": "beta"}})
+        done = poll(f"/api/v1/job-runs/{run['id']}", lambda r: r["status"] != "running", tries=60)
+        assert done["status"] == "succeeded", [(t["key"], t["status"], t["error"]) for t in done["tasks"]]
+        first = next(t for t in done["tasks"] if t["key"] == "first")
+        assert first["output"]["rows"] == [["beta"]], first["output"]
+        flaky = next(t for t in done["tasks"] if t["key"] == "flaky")
+        assert flaky["attempt"] == 3, f"expected 3 attempts, got {flaky['attempt']}"
+        _, partial = call("POST", f"/api/v1/jobs/{created['id']}/run", {"only": ["last"]})
+        assert [t["key"] for t in partial["tasks"]] == ["last"], partial["tasks"]
+        poll(f"/api/v1/job-runs/{partial['id']}", lambda r: r["status"] != "running", tries=30, pause=1)
+    finally:
+        call("DELETE", f"/api/v1/jobs/{created['id']}")
     return "parameter substituted, succeeded on attempt 3, run-from-here ran 1 task"
 
 
