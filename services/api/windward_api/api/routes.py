@@ -61,9 +61,7 @@ async def health() -> HealthResponse:
 
 
 @router.get("/engine/status", response_model=EngineStatusResponse, tags=["engine"])
-async def engine_status(
-    supervisor: SupervisorDep, engine_client: EngineClientDep
-) -> EngineStatusResponse:
+async def engine_status(supervisor: SupervisorDep, engine_client: EngineClientDep) -> EngineStatusResponse:
     """What the engine is doing right now, including when it is not running.
 
     Engine death is a normal condition (ADR-0002): this endpoint answers 200

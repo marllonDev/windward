@@ -75,9 +75,7 @@ class SparkConnectEngineClient:
             self._session = None
             self._engine_version = None
             self._settings.engine_session_id = str(uuid.uuid4())
-        logger.warning(
-            "Spark Connect session was lost; moved to %s", self._settings.engine_session_id
-        )
+        logger.warning("Spark Connect session was lost; moved to %s", self._settings.engine_session_id)
         if stale is not None:
             _close_quietly(stale)
         if self.on_session_rotated is not None:
@@ -105,9 +103,7 @@ class SparkConnectEngineClient:
         # Column-wise extraction, because a result set may carry duplicate
         # column names and a row dict would silently drop them.
         column_values = [page.column(index).to_pylist() for index in range(page.num_columns)]
-        rows: tuple[tuple[Any, ...], ...] = (
-            tuple(zip(*column_values, strict=True)) if column_values else ()
-        )
+        rows: tuple[tuple[Any, ...], ...] = tuple(zip(*column_values, strict=True)) if column_values else ()
 
         return QueryResult(
             columns=columns,

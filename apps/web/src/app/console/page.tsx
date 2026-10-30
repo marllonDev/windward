@@ -4,7 +4,10 @@ import { api, type QueryResult, type SavedQuery } from "@/lib/api";
 import { addHistory } from "@/lib/history";
 import CatalogTree from "@/components/CatalogTree";
 import ResultPanel from "@/components/ResultPanel";
-import SqlEditor from "@/components/SqlEditor";
+import CodeEditor from "@/components/CodeEditor";
+import { useCatalogWords } from "@/lib/completions";
+import { formatSql } from "@/lib/highlight";
+import { loadHistory, type HistoryEntry } from "@/lib/history";
 import { EmptyState, ErrorState, Icon, PageHead } from "@/components/ui";
 
 type Tab = { id: string; name: string; sql: string; savedId?: string };
@@ -19,7 +22,9 @@ export default function Console() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [running, setRunning] = useState(false);
   const [saved, setSaved] = useState<SavedQuery[]>([]);
-  const [side, setSide] = useState<"catalog" | "saved">("catalog");
+  const [side, setSide] = useState<"catalog" | "saved" | "history">("catalog");
+  const [recent, setRecent] = useState<HistoryEntry[]>([]);
+  const words = useCatalogWords();
   const editorRef = useRef<HTMLDivElement>(null);
 
   const loadSaved = useCallback(() => api.savedQueries().then(setSaved).catch(() => undefined), []);
@@ -111,6 +116,7 @@ export default function Console() {
     <div className="page">
       <PageHead title="SQL console" subtitle="Run Spark SQL against the Sail engine."
         actions={<>
+          <button className="btn" onClick={() => tab && patch({ sql: formatSql(tab.sql) })} disabled={!tab?.sql.trim()}>Format</button>
           <button className="btn" onClick={() => execute(selectedOrAll(), true)} disabled={running}>Explain</button>
           <button className="btn" onClick={save}>Save</button>
           <button className="btn primary" onClick={() => execute(selectedOrAll())} disabled={running}>
@@ -121,8 +127,15 @@ export default function Console() {
           <div className="tabs" role="tablist" style={{ marginBottom: 8 }}>
             <button role="tab" aria-selected={side === "catalog"} onClick={() => setSide("catalog")}>Catalog</button>
             <button role="tab" aria-selected={side === "saved"} onClick={() => { setSide("saved"); loadSaved(); }}>Saved</button>
+            <button role="tab" aria-selected={side === "history"} onClick={() => { setSide("history"); setRecent(loadHistory().slice(0, 30)); }}>History</button>
           </div>
-          {side === "catalog"
+          {side === "history"
+            ? (recent.length === 0 ? <div className="caption">Nothing run yet.</div> : recent.map((h) => (
+                <button key={h.id} className="row hist" title={h.sql}
+                  onClick={() => { const t = { id: crypto.randomUUID(), name: "From history", sql: h.sql }; setTabs((ts) => [...ts, t]); setActive(t.id); }}>
+                  <span className={`dot ${h.status === "failed" ? "bad" : "ok"}`} aria-hidden="true" />
+                  <span className="mono clip">{h.sql.replace(/\s+/g, " ")}</span></button>)))
+            : side === "catalog"
             ? <CatalogTree selected={null} onSelect={(s) => s && patch({ sql: `select * from ${s.db}.${s.table} limit 100;` })} />
             : saved.length === 0
               ? <div className="caption">No saved queries yet. Press Save in the editor.</div>
@@ -145,7 +158,9 @@ export default function Console() {
             <button onClick={() => { const t = fresh(tabs.length + 1); setTabs((ts) => [...ts, t]); setActive(t.id); }} aria-label="New tab">+</button>
           </div>
           <div ref={editorRef}>
-            <SqlEditor value={tab?.sql ?? ""} onChange={(sql) => patch({ sql })} onRun={() => execute(selectedOrAll())} />
+            <CodeEditor language="sql" value={tab?.sql ?? ""} onChange={(sql) => patch({ sql })} onRun={() => execute(selectedOrAll())}
+              onSave={save} completions={words} minLines={8} ariaLabel="SQL editor"
+              placeholder="select * from demo.route_summary;   -- Ctrl/⌘ + Enter to run" />
           </div>
           {error ? <div className="card"><ErrorState title="The query failed" error={error} /></div>
             : plan ? <div className="card pad"><h3 style={{ marginBottom: 8 }}>Query plan</h3><pre className="log" style={{ margin: 0 }}>{plan}</pre></div>

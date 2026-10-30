@@ -47,6 +47,37 @@ export type NotebookSummary = { id: string; name: string; updated_at: string; ce
 export type Notebook = NotebookSummary & { cells: NotebookCell[] };
 export type Upload = { file: string; table: string; bytes: number };
 
+export type TaskType = "sql" | "notebook" | "python" | "dbt_sail" | "dbt2";
+export type JobTask = {
+  key: string; name: string; type: TaskType; depends_on: string[];
+  config: Record<string, string>; timeout_seconds: number;
+};
+export type Schedule = { cron: string; enabled: boolean };
+export type TaskRun = {
+  key: string; name: string; type: TaskType; depends_on: string[]; status: string;
+  started_at: string | null; finished_at: string | null; log?: string[];
+  output?: { columns: string[]; rows: unknown[][] } | null; error: string | null;
+};
+export type JobRun = {
+  id: string; job_id: string; job_name: string; status: string; trigger: string;
+  started_at: string; finished_at: string | null; tasks: TaskRun[];
+};
+export type Job = {
+  id: string; name: string; description: string; schedule: Schedule | null; tasks: JobTask[];
+  updated_at: string; last_run?: JobRun | null; running?: boolean;
+};
+export type JobDraft = Pick<Job, "name" | "description" | "schedule" | "tasks">;
+export type Dbt2Project = { name: string; files: number; updated_at: string; has_warehouse: boolean };
+export type Dbt2Run = {
+  run_id: string; project: string; command: string; select: string | null; status: "running" | "succeeded" | "failed";
+  started_at: string; finished_at: string | null; exit_code: number | null;
+  nodes: { unique_id: string; status: string; execution_time: number | null; message: string | null }[];
+  log: string[]; log_total: number;
+};
+export type GraphNode = {
+  unique_id: string; name: string; resource_type: string; materialized: string | null; depends_on: string[];
+};
+
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
     super(message);
@@ -93,6 +124,34 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
 }
 
 export const api = {
+  jobs: () => send<Job[]>("/api/v1/jobs", "GET"),
+  job: (id: string) => send<Job>(`/api/v1/jobs/${id}`, "GET"),
+  createJob: (job: JobDraft) => send<Job>("/api/v1/jobs", "POST", job),
+  saveJob: (id: string, job: JobDraft) => send<Job>(`/api/v1/jobs/${id}`, "PUT", job),
+  deleteJob: (id: string) => send<void>(`/api/v1/jobs/${id}`, "DELETE"),
+  runJob: (id: string) => send<JobRun>(`/api/v1/jobs/${id}/run`, "POST"),
+  jobRuns: (id: string) => send<JobRun[]>(`/api/v1/jobs/${id}/runs`, "GET"),
+  recentRuns: () => send<JobRun[]>("/api/v1/job-runs", "GET"),
+  jobRun: (id: string) => send<JobRun>(`/api/v1/job-runs/${id}`, "GET"),
+  cancelRun: (id: string) => send<{ cancelled: boolean }>(`/api/v1/job-runs/${id}/cancel`, "POST"),
+  dbt2Projects: () => send<Dbt2Project[]>("/api/v1/dbt2/projects", "GET"),
+  dbt2Create: (name: string) => send<Dbt2Project>("/api/v1/dbt2/projects", "POST", { name }),
+  dbt2Delete: (name: string) => send<void>(`/api/v1/dbt2/projects/${name}`, "DELETE"),
+  dbt2Files: (name: string) => send<{ path: string; size: number }[]>(`/api/v1/dbt2/projects/${name}/files`, "GET"),
+  dbt2Read: (name: string, path: string) =>
+    send<{ content: string }>(`/api/v1/dbt2/projects/${name}/file?path=${encodeURIComponent(path)}`, "GET"),
+  dbt2Write: (name: string, path: string, content: string) =>
+    send<{ path: string }>(`/api/v1/dbt2/projects/${name}/file?path=${encodeURIComponent(path)}`, "PUT", { content }),
+  dbt2DeleteFile: (name: string, path: string) =>
+    send<void>(`/api/v1/dbt2/projects/${name}/file?path=${encodeURIComponent(path)}`, "DELETE"),
+  dbt2Start: (name: string, command: string, select?: string) =>
+    send<Dbt2Run>(`/api/v1/dbt2/projects/${name}/runs`, "POST", { command, select: select || null }),
+  dbt2Runs: (name: string) => send<Dbt2Run[]>(`/api/v1/dbt2/projects/${name}/runs`, "GET"),
+  dbt2Run: (id: string, after = 0) => send<Dbt2Run>(`/api/v1/dbt2/runs/${id}?after=${after}`, "GET"),
+  dbt2Graph: (name: string) => send<{ parsed: boolean; nodes: GraphNode[] }>(`/api/v1/dbt2/projects/${name}/graph`, "GET"),
+  dbt2Tables: (name: string) => send<{ schema: string; name: string; type: string }[]>(`/api/v1/dbt2/projects/${name}/tables`, "GET"),
+  dbt2Query: (name: string, sql: string, limit = 500) =>
+    send<{ columns: string[]; rows: unknown[][]; truncated: boolean }>(`/api/v1/dbt2/projects/${name}/query`, "POST", { sql, limit }),
   savedQueries: () => send<SavedQuery[]>("/api/v1/saved-queries", "GET"),
   saveQuery: (name: string, sql: string, id?: string) =>
     send<SavedQuery>("/api/v1/saved-queries", "POST", { name, sql, id }),

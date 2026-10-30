@@ -76,7 +76,7 @@ export default function Dbt() {
 
   return (
     <div className="page">
-      <PageHead title="dbt project" subtitle={project.data?.name ? `Project ${project.data.name}` : "Transformations on Sail."}
+      <PageHead title="dbt on Sail" subtitle={project.data?.name ? `Project ${project.data.name} · dbt-core 1.x + dbt-sail. dbt 2 cannot target Sail, so dbt 2 projects (DuckDB) live under “dbt 2 projects”.` : "Transformations on Sail."}
         actions={COMMANDS.map((c) => (
           <button key={c} className={`btn${c === "build" ? " primary" : ""}`} disabled={running || busy !== null}
             onClick={() => start(c)}>

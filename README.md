@@ -60,7 +60,7 @@ Then open **http://localhost:3000**. Everything runs in containers:
 
 | Service | What it is | Published |
 |---|---|---|
-| `web` | Next.js shell: SQL console, catalog, query history, dbt panel, engine status | `3000` |
+| `web` | Next.js shell: SQL console, notebooks, catalog, jobs, dbt 2 projects, dbt on Sail, engine status | `3000` |
 | `api` | Platform API (FastAPI). Supervises the Sail engine, runs dbt, serves `/api/v1` (docs at `/docs`) | `8000` |
 
 Sail's Spark Connect (`50051`) and Flight SQL (`32010`) ports live inside the `api`
@@ -71,10 +71,13 @@ SQL console. dbt 2.0.8 is installed in the image, but the project runs on the
 
 ## What you can do
 
-- **SQL console.** Tabbed editor, Ctrl/⌘+Enter, run a selection, **Explain** plans, **Save** queries, results as a table or a bar/line/pie **chart**, **CSV export**.
-- **Notebooks.** SQL, Python (PySpark with `spark` ready and variables kept between cells) and Markdown cells; Run all, Shift+Enter, autosave, restartable kernel. Stored in SQLite on the data volume.
+- **SQL console.** Tabbed editor with syntax colouring and autocomplete, Ctrl/⌘+Enter, run a selection, Format, query history, **Explain** plans, **Save** queries, results as a table or a bar/line/pie **chart**, **CSV export**.
+- **Notebooks.** SQL, Python (PySpark with `spark` ready and variables kept between cells) and text cells with execution counts, per-cell status, collapsible outputs, Run all, Shift+Enter, autosave and a restartable kernel. Stored in SQLite on the data volume.
 - **Catalog and uploads.** Browse databases and tables, see columns, a 100-row preview and table details, and **upload a CSV, TSV, JSON, JSON Lines or Parquet file** to get a queryable `uploads.<name>` table.
-- **dbt project.** Seed, run, test and build from the browser, follow streaming logs and the lineage graph. The demo project builds automatically on start.
+- **Jobs.** Build a DAG of tasks — SQL, notebooks, Python, dbt on Sail and dbt 2 — wire dependencies, schedule it with cron, run it now, watch per-task logs and results, cancel a run. Sail and dbt 2 are independent engines, and a Job is where they meet.
+- **dbt 2 projects.** Create a dbt 2 project from a starter, edit its files with syntax colouring, run `seed/run/test/build`, see lineage, and query the DuckDB warehouse it builds into.
+- **dbt on Sail.** The bundled project (dbt-core 1.x + `dbt-sail`) against Sail. dbt 2 has no Sail adapter, so this is the only way to run dbt on Sail today.
+- **Workspace.** Home dashboard, ⌘K command palette, grouped and collapsible sidebar, a code editor with syntax colours, autocomplete from your catalog and SQL formatting.
 - **Engine status.** Live state of the supervised Sail processes, restarts and log tails.
 
 Stop with `docker compose down` (add `-v` to drop the data volume).

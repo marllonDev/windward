@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Nav from "@/components/Nav";
+import Palette from "@/components/Palette";
+import { ToastProvider } from "@/components/Toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,10 +14,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <div className="shell">
-          <Nav />
-          <main className="main">{children}</main>
-        </div>
+        <ToastProvider>
+          <div className="shell">
+            <Nav />
+            <main className="main">{children}</main>
+            <Palette />
+          </div>
+        </ToastProvider>
       </body>
     </html>
   );

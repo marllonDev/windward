@@ -65,7 +65,5 @@ async def list_runs(runner: RunnerDep) -> list[DbtRunResponse]:
 
 
 @router.get("/runs/{run_id}", response_model=DbtRunResponse)
-async def get_run(
-    run_id: str, runner: RunnerDep, after: Annotated[int, Query(ge=0)] = 0
-) -> DbtRunResponse:
+async def get_run(run_id: str, runner: RunnerDep, after: Annotated[int, Query(ge=0)] = 0) -> DbtRunResponse:
     return _render(runner.get(run_id), after=after)

@@ -21,6 +21,15 @@ CREATE TABLE IF NOT EXISTS saved_queries (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, sql TEXT NOT NULL,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, spec TEXT NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS job_runs (
+    id TEXT PRIMARY KEY, job_id TEXT NOT NULL, job_name TEXT NOT NULL, status TEXT NOT NULL,
+    trigger_kind TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, tasks TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs (job_id, started_at DESC);
 CREATE TABLE IF NOT EXISTS notebooks (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, cells TEXT NOT NULL,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -57,9 +66,7 @@ class Store:
         with self._lock:
             if (
                 query_id
-                and self._db.execute(
-                    "SELECT 1 FROM saved_queries WHERE id = ?", (query_id,)
-                ).fetchone()
+                and self._db.execute("SELECT 1 FROM saved_queries WHERE id = ?", (query_id,)).fetchone()
             ):
                 self._db.execute(
                     "UPDATE saved_queries SET name = ?, sql = ?, updated_at = ? WHERE id = ?",
@@ -72,9 +79,7 @@ class Store:
                     (query_id, name, sql, now, now),
                 )
             self._db.commit()
-            return dict(
-                self._db.execute("SELECT * FROM saved_queries WHERE id = ?", (query_id,)).fetchone()
-            )
+            return dict(self._db.execute("SELECT * FROM saved_queries WHERE id = ?", (query_id,)).fetchone())
 
     def delete_query(self, query_id: str) -> bool:
         with self._lock:
@@ -104,9 +109,7 @@ class Store:
 
     def get_notebook(self, notebook_id: str) -> dict[str, Any] | None:
         with self._lock:
-            row = self._db.execute(
-                "SELECT * FROM notebooks WHERE id = ?", (notebook_id,)
-            ).fetchone()
+            row = self._db.execute("SELECT * FROM notebooks WHERE id = ?", (notebook_id,)).fetchone()
         return self._notebook(row, with_cells=True) if row else None
 
     def create_notebook(self, name: str, cells: list[dict[str, Any]]) -> dict[str, Any]:
@@ -139,3 +142,101 @@ class Store:
             cur = self._db.execute("DELETE FROM notebooks WHERE id = ?", (notebook_id,))
             self._db.commit()
             return cur.rowcount > 0
+
+    # -- jobs ----------------------------------------------------------------
+    @staticmethod
+    def _job(row: sqlite3.Row) -> dict[str, Any]:
+        spec = json.loads(row["spec"])
+        return {
+            "id": row["id"], "name": row["name"], "created_at": row["created_at"],
+            "updated_at": row["updated_at"], **spec,
+        }  # fmt: skip
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM jobs ORDER BY name").fetchall()
+        return [self._job(r) for r in rows]
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._job(row) if row else None
+
+    def save_job(self, job_id: str | None, name: str, spec: dict[str, Any]) -> dict[str, Any] | None:
+        now = _now()
+        with self._lock:
+            if job_id is None:
+                job_id = str(uuid.uuid4())
+                self._db.execute(
+                    "INSERT INTO jobs VALUES (?, ?, ?, ?, ?)",
+                    (job_id, name, json.dumps(spec), now, now),
+                )
+            else:
+                cur = self._db.execute(
+                    "UPDATE jobs SET name = ?, spec = ?, updated_at = ? WHERE id = ?",
+                    (name, json.dumps(spec), now, job_id),
+                )
+                if cur.rowcount == 0:
+                    return None
+            self._db.commit()
+        return self.get_job(job_id)
+
+    def delete_job(self, job_id: str) -> bool:
+        with self._lock:
+            cur = self._db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            self._db.execute("DELETE FROM job_runs WHERE job_id = ?", (job_id,))
+            self._db.commit()
+            return cur.rowcount > 0
+
+    # -- job runs ------------------------------------------------------------
+    @staticmethod
+    def _run(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"], "job_id": row["job_id"], "job_name": row["job_name"],
+            "status": row["status"], "trigger": row["trigger_kind"], "started_at": row["started_at"],
+            "finished_at": row["finished_at"], "tasks": json.loads(row["tasks"]),
+        }  # fmt: skip
+
+    def insert_run(self, run: dict[str, Any]) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO job_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (run["id"], run["job_id"], run["job_name"], run["status"], run["trigger"],
+                 run["started_at"], run["finished_at"], json.dumps(run["tasks"])),
+            )  # fmt: skip
+            self._db.commit()
+
+    def update_run(self, run: dict[str, Any]) -> None:
+        with self._lock:
+            self._db.execute(
+                "UPDATE job_runs SET status = ?, finished_at = ?, tasks = ? WHERE id = ?",
+                (run["status"], run["finished_at"], json.dumps(run["tasks"]), run["id"]),
+            )
+            self._db.commit()
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM job_runs WHERE id = ?", (run_id,)).fetchone()
+        return self._run(row) if row else None
+
+    def list_runs(self, job_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        query, args = "SELECT * FROM job_runs", []
+        if job_id:
+            query, args = query + " WHERE job_id = ?", [job_id]
+        with self._lock:
+            rows = self._db.execute(query + " ORDER BY started_at DESC LIMIT ?", (*args, limit))
+            return [self._run(r) for r in rows.fetchall()]
+
+    def interrupt_running_runs(self) -> int:
+        """Runs left 'running' by a previous process can never finish."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM job_runs WHERE status = 'running'").fetchall()
+        for row in rows:
+            run = self._run(row)
+            for task in run["tasks"]:
+                if task["status"] in ("running", "pending"):
+                    task["status"] = "failed" if task["status"] == "running" else "skipped"
+                    task["error"] = "Interrupted by an API restart."
+            run["status"], run["finished_at"] = "failed", _now()
+            self.update_run(run)
+        return len(rows)

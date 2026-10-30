@@ -241,14 +241,111 @@ def _() -> str:
     return "state kept, spark ok, error shown, restart clears"
 
 
+def poll(path: str, done: Callable[[Any], bool], tries: int = 80, pause: float = 2.0) -> Any:
+    body: Any = None
+    for _ in range(tries):
+        _, body = call("GET", path)
+        if done(body):
+            return body
+        time.sleep(pause)
+    return body
+
+
+@check("dbt 2: create project, build on DuckDB, lineage, query warehouse")
+def _() -> str:
+    call("DELETE", "/api/v1/dbt2/projects/smoke_shop")
+    status, _ = call("POST", "/api/v1/dbt2/projects", {"name": "smoke_shop"})
+    assert status == 201
+    status, run = call("POST", "/api/v1/dbt2/projects/smoke_shop/runs", {"command": "build"})
+    assert status == 202, run
+    run = poll(f"/api/v1/dbt2/runs/{run['run_id']}", lambda r: r["status"] != "running")
+    assert run["status"] == "succeeded", "\n".join(run["log"][-10:])
+    _, graph = call("GET", "/api/v1/dbt2/projects/smoke_shop/graph")
+    assert len(graph["nodes"]) == 3, graph
+    _, rows = call("POST", "/api/v1/dbt2/projects/smoke_shop/query", {"sql": "select * from customer_orders order by 1"})
+    assert [r[0] for r in rows["rows"]] == ["ana", "bob", "carla"], rows
+    return "3 models/seeds, 3 customers"
+
+
+@check("dbt 2: file editing is confined to the project")
+def _() -> str:
+    status, _ = call("PUT", "/api/v1/dbt2/projects/smoke_shop/file?path=models/extra.sql", {"content": "select 1 as x"})
+    assert status == 200
+    _, got = call("GET", "/api/v1/dbt2/projects/smoke_shop/file?path=models/extra.sql")
+    assert got["content"] == "select 1 as x"
+    status, body = call("GET", "/api/v1/dbt2/projects/smoke_shop/file?path=../../../etc/passwd")
+    assert status == 400, (status, body)
+    return "traversal blocked"
+
+
+@check("jobs: mixed Sail + dbt on Sail + dbt 2 + Python DAG succeeds")
+def _() -> str:
+    job = {
+        "name": "smoke mixed",
+        "tasks": [
+            {"key": "sail_sql", "type": "sql", "config": {"sql": "select * from demo.route_summary"}},
+            {"key": "dbt_sail", "type": "dbt_sail", "depends_on": ["sail_sql"], "config": {"command": "build"}},
+            {"key": "dbt2", "type": "dbt2", "config": {"project": "smoke_shop", "command": "build"}},
+            {"key": "report", "type": "python", "depends_on": ["dbt_sail", "dbt2"],
+             "config": {"code": "print(spark.sql('select count(*) from demo.route_summary').collect()[0][0])"}},
+        ],
+    }
+    status, created = call("POST", "/api/v1/jobs", job)
+    assert status == 201, created
+    _, run = call("POST", f"/api/v1/jobs/{created['id']}/run")
+    done = poll(f"/api/v1/job-runs/{run['id']}", lambda r: r["status"] != "running", tries=120)
+    states = {t["key"]: t["status"] for t in done["tasks"]}
+    assert done["status"] == "succeeded", states
+    call("DELETE", f"/api/v1/jobs/{created['id']}")
+    return ", ".join(f"{k}:{v}" for k, v in states.items())
+
+
+@check("jobs: failure skips downstream; cycles are rejected")
+def _() -> str:
+    bad = {"name": "smoke fail", "tasks": [
+        {"key": "x", "type": "sql", "config": {"sql": "select * from nope"}},
+        {"key": "y", "type": "sql", "depends_on": ["x"], "config": {"sql": "select 1"}}]}
+    _, created = call("POST", "/api/v1/jobs", bad)
+    _, run = call("POST", f"/api/v1/jobs/{created['id']}/run")
+    done = poll(f"/api/v1/job-runs/{run['id']}", lambda r: r["status"] != "running", tries=30, pause=1)
+    assert done["status"] == "failed" and [t["status"] for t in done["tasks"]] == ["failed", "skipped"], done["tasks"]
+    call("DELETE", f"/api/v1/jobs/{created['id']}")
+    cyc = {"name": "cyc", "tasks": [
+        {"key": "a", "type": "sql", "depends_on": ["b"], "config": {"sql": "x"}},
+        {"key": "b", "type": "sql", "depends_on": ["a"], "config": {"sql": "x"}}]}
+    status, body = call("POST", "/api/v1/jobs", cyc)
+    assert status == 400 and "cycle" in body["error"]["message"], body
+    return "x:failed y:skipped; cycle -> 400"
+
+
+@check("jobs: run can be cancelled")
+def _() -> str:
+    job = {"name": "smoke cancel", "tasks": [
+        {"key": "slow", "type": "python", "config": {"code": "import time\ntime.sleep(60)"}}]}
+    _, created = call("POST", "/api/v1/jobs", job)
+    _, run = call("POST", f"/api/v1/jobs/{created['id']}/run")
+    time.sleep(2)
+    call("POST", f"/api/v1/job-runs/{run['id']}/cancel")
+    done = poll(f"/api/v1/job-runs/{run['id']}", lambda r: r["status"] != "running", tries=20, pause=1)
+    assert done["status"] == "cancelled", done["status"]
+    call("DELETE", f"/api/v1/jobs/{created['id']}")
+    return "cancelled"
+
+
+@check("cleanup test data")
+def _() -> str:
+    call("DELETE", "/api/v1/dbt2/projects/smoke_shop")
+    return "removed smoke_shop"
+
+
 @check("web pages render through the proxy")
 def _() -> str:
     if BASE.endswith(":8000"):
         return "skipped (API origin)"
-    for page in ("/", "/console", "/catalog", "/notebooks", "/history", "/dbt", "/engine"):
+    for page in ("/", "/console", "/catalog", "/notebooks", "/history", "/jobs", "/jobs/new", "/dbt2", "/dbt", "/engine"):
         with urllib.request.urlopen(BASE + page, timeout=30) as response:
             assert response.status == 200, page
-    return "7 pages"
+    return "10 pages"
 
 
 width = max(len(name) for name, _, _ in results)

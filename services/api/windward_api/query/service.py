@@ -57,8 +57,7 @@ class QueryService:
             # cancellation is M2's `DELETE /queries/{id}` -- until then the
             # orphaned statement runs to completion and its result is dropped.
             raise QueryTimeoutError(
-                f"The query exceeded the {self._settings.query_timeout_seconds:.0f}s "
-                "platform timeout.",
+                f"The query exceeded the {self._settings.query_timeout_seconds:.0f}s platform timeout.",
                 detail={"query_id": query_id},
             ) from exc
         return SubmittedQuery(query_id=query_id, result=result, max_rows=limit)

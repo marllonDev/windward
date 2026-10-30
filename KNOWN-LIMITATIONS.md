@@ -67,7 +67,11 @@ Sail/dbt base images until `docker/` gains real content in a later milestone
 (noted as optional item `O4` on `TES-7`). Not a defect at M0 — scope as
 designed — but recorded here so it is not mistaken for an oversight later.
 
-### dbt 2 has no Sail adapter, so dbt projects run on the Python `dbt-sail` runner
+### dbt 2 has no Sail adapter, so the Sail project runs on the Python `dbt-sail` runner
+
+dbt 2 does run: dbt 2 projects (UI: "dbt 2 projects") build into DuckDB and are fully
+independent from Sail. The paragraph below is about the bundled project that targets
+Sail. A Job can run both, but they cannot share tables.
 
 The dbt 2 Rust CLI (v2.0.8) is installed in the API image and reports its
 version in the dbt panel, but it cannot target Sail: its built-in adapters are
@@ -127,6 +131,13 @@ session are not recoverable.
 
 The console's open tabs and the query history are stored in `localStorage`.
 Saved queries and notebooks are server-side (SQLite).
+
+### Job scheduling is simple on purpose
+
+Cron is UTC. The scheduler is a loop inside the API (15 s resolution): ticks missed
+while the API was down are not replayed, a job whose previous run is still going is
+skipped, and runs interrupted by a restart are marked failed. `dbt_sail` tasks share
+one runner, so two Jobs queue on each other; dbt 2 projects run one at a time each.
 
 ## Product behavior
 

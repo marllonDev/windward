@@ -203,9 +203,7 @@ class SupervisedListener:
             self.reachable = False
             return False
         try:
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.connect_host, self.port), timeout
-            )
+            _, writer = await asyncio.wait_for(asyncio.open_connection(self.connect_host, self.port), timeout)
         except (TimeoutError, OSError):
             self.reachable = False
             return False
@@ -395,9 +393,7 @@ class SailSupervisor:
                 if listener.interface is EngineInterface.SPARK_CONNECT:
                     self._generation += 1
 
-        await asyncio.gather(
-            *(listener.probe(probe_timeout) for listener in self._listeners.values())
-        )
+        await asyncio.gather(*(listener.probe(probe_timeout) for listener in self._listeners.values()))
         self._state = self._compute_state(monotonic_now)
         if self._state is EngineState.RUNNING:
             self._ready.set()

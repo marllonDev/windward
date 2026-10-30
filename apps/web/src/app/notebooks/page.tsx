@@ -2,18 +2,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { api, type NotebookCell } from "@/lib/api";
+import { api } from "@/lib/api";
+import { starterCells } from "@/lib/starter";
 import { usePoll } from "@/lib/hooks";
 import { EmptyState, ErrorState, Icon, PageHead } from "@/components/ui";
-
-const cell = (type: NotebookCell["type"], source: string): NotebookCell => ({ id: crypto.randomUUID(), type, source });
-
-const STARTER: NotebookCell[] = [
-  cell("markdown", "# Welcome to Windward notebooks\nCells run on the **Sail** engine. Use SQL cells for queries and Python cells for PySpark. Press **Shift + Enter** to run a cell."),
-  cell("sql", "select * from demo.route_summary order by total_fare desc"),
-  cell("python", "df = spark.sql(\"select route, total_fare from demo.route_summary\")\ndf"),
-  cell("python", "df.toPandas().describe()"),
-];
 
 export default function Notebooks() {
   const router = useRouter();
@@ -23,7 +15,7 @@ export default function Notebooks() {
   async function create() {
     setBusy(true);
     try {
-      const nb = await api.createNotebook("Untitled notebook", STARTER.map((c) => ({ ...c, id: crypto.randomUUID() })));
+      const nb = await api.createNotebook("Untitled notebook", starterCells());
       router.push(`/notebooks/${nb.id}`);
     } finally {
       setBusy(false);

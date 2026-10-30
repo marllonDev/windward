@@ -17,12 +17,15 @@ from fastapi import FastAPI
 from . import __version__
 from .api import router
 from .api.dbt_routes import router as dbt_router
+from .api.jobs_routes import router as jobs_router
 from .api.workspace_routes import router as workspace_router
 from .config import Settings, get_settings
 from .dbt import DbtRunner
+from .dbt2 import Dbt2Service
 from .engine.spark_connect import SparkConnectEngineClient
 from .engine.supervisor import SailSupervisor
 from .errors import WindwardError, install_exception_handlers
+from .jobs import JobRunner
 from .kernel import KernelManager
 from .query.service import QueryService
 from .query.uploads import UploadService
@@ -57,6 +60,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.store = Store(resolved.resolved_store_path)
         app.state.kernels = KernelManager(resolved)
         app.state.uploads = UploadService(resolved, app.state.query_service)
+        app.state.dbt2 = Dbt2Service(resolved)
+        app.state.jobs = JobRunner(
+            resolved, app.state.store, app.state.query_service, app.state.kernels,
+            app.state.dbt_runner, app.state.dbt2,
+        )  # fmt: skip
+        app.state.jobs.recover()
+        app.state.jobs.start_scheduler()
 
         loop = asyncio.get_running_loop()
 
@@ -97,6 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await app.state.jobs.close()
             await app.state.kernels.close()
             app.state.store.close()
             engine_client.close()
@@ -112,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(dbt_router)
     app.include_router(workspace_router)
+    app.include_router(jobs_router)
     return app
 
 
