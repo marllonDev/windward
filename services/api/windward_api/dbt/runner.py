@@ -81,6 +81,7 @@ class DbtRunner:
         env = dict(os.environ)
         env["DBT_SEND_ANONYMOUS_USAGE_STATS"] = "false"
         env["NO_COLOR"] = "1"
+        env["WINDWARD_ENGINE_SESSION_ID"] = self._settings.engine_session_id
         return env
 
     # -- runs ------------------------------------------------------------------

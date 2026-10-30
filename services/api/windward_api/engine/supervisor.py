@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+import os
 import subprocess
 import threading
 from collections.abc import Sequence
@@ -34,6 +35,18 @@ _SUBCOMMAND = {
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+#: Sail drops a Spark Connect session after 900 s idle by default
+#: (`spark.session_timeout_secs`), which silently took the shared session -- and with
+#: it the memory catalog -- away. A week keeps it for any realistic idle gap.
+SESSION_TIMEOUT_SECS = "604800"
+
+
+def _sail_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env.setdefault("SAIL_SPARK__SESSION_TIMEOUT_SECS", SESSION_TIMEOUT_SECS)
+    return env
 
 
 class SupervisedListener:
@@ -103,6 +116,7 @@ class SupervisedListener:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            env=_sail_env(),
         )
         self.started_at = _now()
         self.reachable = False

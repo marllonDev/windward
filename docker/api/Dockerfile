@@ -46,7 +46,7 @@ RUN python -m venv /opt/dbt-py \
         dbt-spark[session]==1.11.0 \
         dbt-sail==0.1.0 \
         pyspark==4.2.0 \
-        pysail==0.7.2 \
+        pysail==0.7.3 \
         pandas==2.2.3 \
         pyarrow==21.0.0 \
         numpy==2.5.4 \

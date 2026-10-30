@@ -50,3 +50,11 @@ worker process per notebook (`windward_api/kernel`), connected to the shared
 Sail session. Uploads land in `data/uploads` and are registered as
 `uploads.<stem>` tables; the API re-registers them and re-runs `dbt build` when
 the engine comes up, because the memory catalog does not survive a restart.
+
+## Addendum — session lifetime (2026-10-30)
+
+The fixed shared session id broke after 15 idle minutes (Sail's
+`spark.session_timeout_secs` default), taking SQL, catalog and notebooks down.
+Sail now runs with a 7-day timeout, and the API rotates to a new session id and
+restores uploads and the dbt demo when it detects "session ... is not running".
+Pins moved to Sail 0.7.3 (latest on PyPI) and stay on dbt 2.0.8 (latest 2.x).

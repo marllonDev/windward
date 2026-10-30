@@ -7,11 +7,11 @@ never patched or forked.
 ## The pin
 
 `sail.version` is the single source of truth for the Sail version, currently
-**0.7.2**. Every place that installs Sail must agree with it:
+**0.7.3**. Every place that installs Sail must agree with it:
 
-- `services/api/pyproject.toml` — `pysail==0.7.2`, because the platform API is
+- `services/api/pyproject.toml` — `pysail==0.7.3`, because the platform API is
   the parent of the engine process and therefore ships the `sail` CLI.
-- `docker/sail/Dockerfile` — `pysail==0.7.2`.
+- `docker/sail/Dockerfile` — `pysail==0.7.3`.
 
 `scripts/check-toolchain-pins.sh` fails the build when those drift apart or
 when any of them uses a floating version.
@@ -28,7 +28,7 @@ sail flight server --ip $WINDWARD_SAIL_BIND_HOST --port 32010 --directory $WINDW
 ```
 
 **Two processes, not one.** ADR-0002's diagram describes "one process, two
-listeners", but the Sail 0.7.2 CLI serves exactly one interface per process:
+listeners", but the Sail 0.7.3 CLI serves exactly one interface per process:
 `sail spark server` and `sail flight server` are separate commands and neither
 opens the other's port. The supervisor therefore owns two children and reports
 each one separately in `GET /api/v1/engine/status`. Recorded in

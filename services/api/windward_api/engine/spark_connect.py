@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import uuid
+from collections.abc import Callable
 from typing import Any
 
 import grpc
@@ -50,10 +52,38 @@ class SparkConnectEngineClient:
         self._session: SparkSession | None = None
         self._session_generation = 0
         self._engine_version: str | None = None
+        #: Called (from a worker thread) after the session id changes, so the app can
+        #: reset notebook kernels and rebuild what lived in the lost catalog.
+        self.on_session_rotated: Callable[[], None] | None = None
 
     # -- EngineClient ------------------------------------------------------
 
     def execute_sql(self, sql: str, *, max_rows: int) -> QueryResult:
+        try:
+            return self._execute_sql(sql, max_rows=max_rows)
+        except QueryFailedError as exc:
+            if not _is_session_lost(str(exc)):
+                raise
+        # Sail removed our session (idle timeout, or the server dropped it). The same id
+        # cannot be reopened, so move to a new one and retry once.
+        self.rotate_session()
+        return self._execute_sql(sql, max_rows=max_rows)
+
+    def rotate_session(self) -> None:
+        with self._lock:
+            stale = self._session
+            self._session = None
+            self._engine_version = None
+            self._settings.engine_session_id = str(uuid.uuid4())
+        logger.warning(
+            "Spark Connect session was lost; moved to %s", self._settings.engine_session_id
+        )
+        if stale is not None:
+            _close_quietly(stale)
+        if self.on_session_rotated is not None:
+            self.on_session_rotated()
+
+    def _execute_sql(self, sql: str, *, max_rows: int) -> QueryResult:
         session, generation = self._acquire_session()
         started = time.perf_counter()
         try:
@@ -207,6 +237,10 @@ EMPTY_SCHEMA_WARNING = (
 
 def _warnings_for(columns: tuple[Column, ...]) -> tuple[str, ...]:
     return () if columns else (EMPTY_SCHEMA_WARNING,)
+
+
+def _is_session_lost(message: str) -> bool:
+    return "is not running" in message and "session" in message.lower()
 
 
 def _session_id(session: SparkSession) -> str:

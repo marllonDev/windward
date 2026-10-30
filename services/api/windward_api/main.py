@@ -7,6 +7,7 @@ installation (ADR-0002).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ from .config import Settings, get_settings
 from .dbt import DbtRunner
 from .engine.spark_connect import SparkConnectEngineClient
 from .engine.supervisor import SailSupervisor
-from .errors import install_exception_handlers
+from .errors import WindwardError, install_exception_handlers
 from .kernel import KernelManager
 from .query.service import QueryService
 from .query.uploads import UploadService
@@ -56,6 +57,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.store = Store(resolved.resolved_store_path)
         app.state.kernels = KernelManager(resolved)
         app.state.uploads = UploadService(resolved, app.state.query_service)
+
+        loop = asyncio.get_running_loop()
+
+        async def restore_after_session_loss() -> None:
+            # The memory catalog went with the old session: reset Python kernels, then
+            # bring back uploaded tables and the demo project.
+            await app.state.kernels.close()
+            await app.state.uploads.sync()
+            if resolved.dbt_auto_build and (resolved.dbt_project_dir / "dbt_project.yml").is_file():
+                try:
+                    app.state.dbt_runner.start("build")
+                except WindwardError:
+                    logger.info("a dbt run is already in progress; not starting another")
+
+        engine_client.on_session_rotated = lambda: loop.call_soon_threadsafe(
+            lambda: asyncio.create_task(restore_after_session_loss())
+        )
 
         await supervisor.start()
         if await supervisor.wait_until_running(resolved.engine_start_timeout_seconds):

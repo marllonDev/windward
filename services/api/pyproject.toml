@@ -19,9 +19,9 @@ dependencies = [
   "pydantic-settings==2.16.2",
   # The engine itself. The platform API is the parent of the Sail process
   # (ADR-0002), so the `sail` binary ships inside the API image.
-  "pysail==0.7.2",
+  "pysail==0.7.3",
   # Spark Connect client for the interactive query path (ADR-0003). This is the
-  # JVM-free client package; it is the version Sail 0.7.2 is tested against.
+  # JVM-free client package; it is the version Sail 0.7.3 is tested against.
   "pyspark-client==4.2.0",
   "pyarrow==21.0.0",
   "pandas==2.2.3",

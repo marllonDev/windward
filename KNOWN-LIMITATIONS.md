@@ -103,13 +103,25 @@ single-user, local, unauthenticated v0 (ADR-0002) and would not be for a shared
 deployment. Cells time out after 120 s, which restarts the kernel and loses its
 variables.
 
-### Sail 0.7.2 quirks the shell works around
+### Sail 0.7.2/0.7.3 quirks the shell works around (re-checked on 0.7.3)
 
 - `CREATE TABLE ... USING csv OPTIONS (path ...)` ignores `header` and
   `inferSchema` and yields an empty schema; uploads use `LOCATION` instead.
 - `DESCRIBE TABLE` returns no rows for file-backed tables, so the catalog reads
   the column list from `SELECT * ... LIMIT 0`.
-- `DESCRIBE db.table` without the `TABLE` keyword is a parse error.
+- `DESCRIBE uploads.<table>` without the `TABLE` keyword is a parse error (it works for
+  `demo.<table>`), so the shell always writes `DESCRIBE TABLE`.
+
+### Sail drops an idle Spark Connect session after 15 minutes
+
+Sail's `spark.session_timeout_secs` defaults to 900. When it fired, the shared
+session id (see above) was gone for good ("session ... is not running"), which
+made the SQL console, catalog and notebooks fail together and lost the catalog.
+Windward now starts Sail with `SAIL_SPARK__SESSION_TIMEOUT_SECS=604800` (7 days;
+set the variable yourself to change it), and if a session is still lost the API
+moves to a new session id, resets notebook kernels, re-registers uploads and
+re-runs `dbt build`. Python variables and objects created only in the old
+session are not recoverable.
 
 ### Tabs and query history live in the browser
 
