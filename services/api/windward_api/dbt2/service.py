@@ -285,6 +285,42 @@ class Dbt2Service:
             for r in data.get("results", [])
         ]
 
+    def compiled(self, name: str, rel: str) -> str:
+        """The SQL dbt produced for a model, after Jinja. Needs a parse/compile/run first."""
+        project = self._existing(name)
+        target = self._root / "target" / name
+        candidates = [
+            target / "compiled" / project.name / rel,
+            *target.glob(f"compiled/*/{rel}"),
+            *target.glob(f"compiled/**/{Path(rel).name}"),
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate.read_text(errors="replace")
+        raise NotFound("No compiled SQL yet — run `dbt compile` or `dbt build` first.")
+
+    def grep(self, name: str, needle: str) -> list[dict[str, Any]]:
+        """Plain substring search across the project's text files."""
+        term = needle.strip()
+        if len(term) < 2:
+            raise InvalidRequestError("Search for at least two characters.")
+        base = self._existing(name)
+        hits: list[dict[str, Any]] = []
+        for path in self._walk(base):
+            if path.suffix.lower() not in EDITABLE or path.stat().st_size > MAX_FILE_BYTES:
+                continue
+            try:
+                for number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+                    if term.lower() in line.lower():
+                        hits.append({
+                            "path": str(path.relative_to(base)), "line": number, "text": line.strip()[:200],
+                        })  # fmt: skip
+                        if len(hits) >= 100:
+                            return hits
+            except OSError:
+                continue
+        return hits
+
     # -- graph and warehouse ---------------------------------------------------
     def graph(self, name: str) -> dict[str, Any]:
         manifest = self._root / "target" / name / "manifest.json"

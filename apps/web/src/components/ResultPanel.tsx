@@ -1,44 +1,50 @@
 "use client";
 import { useState } from "react";
-import { download, formatCell, isNumericType, toCsv } from "@/lib/format";
+import { download, formatCell, toCsv } from "@/lib/format";
 import Chart from "./Chart";
+import DataGrid from "./DataGrid";
+import { CopyButton, Segmented } from "./kit";
 
 export type Tabular = { columns: string[]; types?: string[]; rows: unknown[][]; footer?: string };
 
-/** Results as a table or a chart, with CSV export. Shared by the console and notebooks. */
+function toJson(columns: string[], rows: unknown[][]): string {
+  return JSON.stringify(rows.map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]]))), null, 2);
+}
+
+function toMarkdown(columns: string[], rows: unknown[][]): string {
+  const head = `| ${columns.join(" | ")} |`;
+  const rule = `| ${columns.map(() => "---").join(" | ")} |`;
+  const body = rows.slice(0, 500).map((r) => `| ${r.map((c) => formatCell(c).replace(/\|/g, "\\|")).join(" | ")} |`);
+  return [head, rule, ...body].join("\n");
+}
+
+/** Results as a grid or a chart, with export. Shared by the console, notebooks and jobs. */
 export default function ResultPanel({ data, maxHeight = "45vh", filename = "result" }: {
   data: Tabular; maxHeight?: string; filename?: string;
 }) {
   const [view, setView] = useState<"table" | "chart">("table");
+  const [exporting, setExporting] = useState(false);
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div className="tabs" role="tablist" style={{ padding: "0 8px" }}>
-        <button role="tab" aria-selected={view === "table"} onClick={() => setView("table")}>Table</button>
-        <button role="tab" aria-selected={view === "chart"} onClick={() => setView("chart")}>Chart</button>
+    <div className="card result" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div className="result-head">
+        <Segmented size="sm" value={view} onChange={setView}
+          options={[{ value: "table", label: "Table", icon: "table" }, { value: "chart", label: "Chart", icon: "dbt" }]} />
         <div style={{ flex: 1 }} />
-        <button className="btn ghost sm" style={{ alignSelf: "center" }}
-          onClick={() => download(`${filename}.csv`, toCsv(data.columns, data.rows))}>Export CSV</button>
+        <CopyButton small label="Copy" text={() => toMarkdown(data.columns, data.rows)} />
+        <div className="menu-wrap">
+          <button className="btn ghost sm" onClick={() => setExporting((v) => !v)} aria-expanded={exporting}>Export ▾</button>
+          {exporting && (
+            <div className="menu" onMouseLeave={() => setExporting(false)}>
+              <button onClick={() => { download(`${filename}.csv`, toCsv(data.columns, data.rows)); setExporting(false); }}>CSV</button>
+              <button onClick={() => { download(`${filename}.json`, toJson(data.columns, data.rows), "application/json"); setExporting(false); }}>JSON</button>
+              <button onClick={() => { download(`${filename}.md`, toMarkdown(data.columns, data.rows), "text/markdown"); setExporting(false); }}>Markdown</button>
+            </div>)}
+        </div>
       </div>
-      {view === "chart" ? <Chart columns={data.columns} types={data.types} rows={data.rows} /> : (
-        <div className="scroll" style={{ maxHeight }}>
-          <table className="tbl">
-            <thead><tr>
-              <th aria-hidden="true" style={{ width: 44 }}>#</th>
-              {data.columns.map((c, i) => (
-                <th key={`${c}-${i}`} className={data.types && isNumericType(data.types[i]) ? "num" : ""}
-                  title={data.types?.[i]}>{c}</th>))}
-            </tr></thead>
-            <tbody>{data.rows.map((row, i) => (
-              <tr key={i}>
-                <td className="num caption">{i + 1}</td>
-                {row.map((cell, j) => (
-                  <td key={j} className={`mono${(data.types ? isNumericType(data.types[j]) : typeof cell === "number") ? " num" : ""}`}>
-                    {cell === null || cell === undefined ? <span className="null">NULL</span> : formatCell(cell)}
-                  </td>))}
-              </tr>))}</tbody>
-          </table>
-        </div>)}
-      <div className="caption" style={{ padding: "8px 12px", borderTop: "1px solid var(--border-default)" }}>
+      {view === "chart"
+        ? <Chart columns={data.columns} types={data.types} rows={data.rows} />
+        : <DataGrid columns={data.columns} types={data.types} rows={data.rows} maxHeight={maxHeight} />}
+      <div className="caption result-foot">
         {data.rows.length} row{data.rows.length === 1 ? "" : "s"}{data.footer ? ` · ${data.footer}` : ""}
       </div>
     </div>

@@ -99,6 +99,31 @@ async def engine_status(supervisor: SupervisorDep, engine_client: EngineClientDe
     )
 
 
+@router.get("/queries/running", tags=["query"])
+async def running_queries(queries: QueryServiceDep) -> list[dict[str, object]]:
+    """What is executing right now, so the shell can offer to cancel it."""
+    return queries.running()
+
+
+@router.get("/queries/recent", tags=["query"])
+async def recent_queries(queries: QueryServiceDep) -> list[dict[str, object]]:
+    return queries.recent()
+
+
+@router.post("/queries/{query_id}/cancel", tags=["query"])
+async def cancel_query(query_id: str, queries: QueryServiceDep) -> dict[str, bool]:
+    """Interrupt a running statement. Answering `false` means it already finished."""
+    return {"cancelled": queries.cancel(query_id)}
+
+
+@router.post("/engine/restart", status_code=status.HTTP_202_ACCEPTED, tags=["engine"])
+async def restart_engine(supervisor: SupervisorDep, request: Request) -> dict[str, str]:
+    """Restart the Sail processes. The in-memory catalog is rebuilt afterwards."""
+    await supervisor.restart()
+    request.app.state.restore_engine_state()
+    return {"state": "restarting"}
+
+
 @router.post(
     "/queries",
     response_model=QueryResponse,

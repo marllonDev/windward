@@ -51,22 +51,23 @@ export type TaskType = "sql" | "notebook" | "python" | "dbt_sail" | "dbt2";
 export type JobTask = {
   key: string; name: string; type: TaskType; depends_on: string[];
   config: Record<string, string>; timeout_seconds: number;
+  retries: number; retry_delay_seconds: number; continue_on_failure: boolean;
 };
 export type Schedule = { cron: string; enabled: boolean };
 export type TaskRun = {
   key: string; name: string; type: TaskType; depends_on: string[]; status: string;
-  started_at: string | null; finished_at: string | null; log?: string[];
+  started_at: string | null; finished_at: string | null; log?: string[]; attempt?: number;
   output?: { columns: string[]; rows: unknown[][] } | null; error: string | null;
 };
 export type JobRun = {
   id: string; job_id: string; job_name: string; status: string; trigger: string;
-  started_at: string; finished_at: string | null; tasks: TaskRun[];
+  started_at: string; finished_at: string | null; tasks: TaskRun[]; parameters?: Record<string, string>;
 };
 export type Job = {
-  id: string; name: string; description: string; schedule: Schedule | null; tasks: JobTask[];
+  id: string; name: string; description: string; schedule: Schedule | null; parameters: JobParameter[]; tasks: JobTask[];
   updated_at: string; last_run?: JobRun | null; running?: boolean;
 };
-export type JobDraft = Pick<Job, "name" | "description" | "schedule" | "tasks">;
+export type JobDraft = Pick<Job, "name" | "description" | "schedule" | "parameters" | "tasks">;
 export type Dbt2Project = { name: string; files: number; updated_at: string; has_warehouse: boolean };
 export type Dbt2Run = {
   run_id: string; project: string; command: string; select: string | null; status: "running" | "succeeded" | "failed";
@@ -77,6 +78,19 @@ export type Dbt2Run = {
 export type GraphNode = {
   unique_id: string; name: string; resource_type: string; materialized: string | null; depends_on: string[];
 };
+
+export type RunningQuery = {
+  query_id: string; sql: string; state: string; started_at: string;
+  finished_at: string | null; duration_ms: number | null; row_count: number | null; error: string | null;
+};
+export type ColumnProfile = {
+  name: string; type: string; nulls: number; null_pct: number; distinct: number;
+  min: string | null; max: string | null;
+};
+export type TableProfile = { table: string; row_count: number; columns: ColumnProfile[] };
+export type CatalogHit = { kind: "table" | "column"; database: string; table: string; label: string; type?: string };
+export type KernelVariable = { name: string; type: string; detail: string };
+export type JobParameter = { name: string; default: string; description: string };
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
@@ -124,12 +138,28 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
 }
 
 export const api = {
+  runningQueries: () => send<RunningQuery[]>("/api/v1/queries/running", "GET"),
+  recentQueries: () => send<RunningQuery[]>("/api/v1/queries/recent", "GET"),
+  cancelQuery: (id: string) => send<{ cancelled: boolean }>(`/api/v1/queries/${id}/cancel`, "POST"),
+  restartEngine: () => send<{ state: string }>("/api/v1/engine/restart", "POST"),
+  profile: (database: string, table: string) =>
+    send<TableProfile>(`/api/v1/catalog/profile?database=${database}&table=${table}`, "GET"),
+  ddl: (database: string, table: string) =>
+    send<{ ddl: string }>(`/api/v1/catalog/ddl?database=${database}&table=${table}`, "GET"),
+  catalogSearch: (q: string) => send<CatalogHit[]>(`/api/v1/catalog/search?q=${encodeURIComponent(q)}`, "GET"),
+  kernelVariables: (id: string) =>
+    send<{ live: boolean; variables: KernelVariable[] }>(`/api/v1/notebooks/${id}/variables`, "GET"),
+  dbt2Compiled: (name: string, path: string) =>
+    send<{ content: string }>(`/api/v1/dbt2/projects/${name}/compiled?path=${encodeURIComponent(path)}`, "GET"),
+  dbt2Search: (name: string, q: string) =>
+    send<{ path: string; line: number; text: string }[]>(`/api/v1/dbt2/projects/${name}/search?q=${encodeURIComponent(q)}`, "GET"),
   jobs: () => send<Job[]>("/api/v1/jobs", "GET"),
   job: (id: string) => send<Job>(`/api/v1/jobs/${id}`, "GET"),
   createJob: (job: JobDraft) => send<Job>("/api/v1/jobs", "POST", job),
   saveJob: (id: string, job: JobDraft) => send<Job>(`/api/v1/jobs/${id}`, "PUT", job),
   deleteJob: (id: string) => send<void>(`/api/v1/jobs/${id}`, "DELETE"),
-  runJob: (id: string) => send<JobRun>(`/api/v1/jobs/${id}/run`, "POST"),
+  runJob: (id: string, parameters: Record<string, string> = {}, only: string[] = []) =>
+    send<JobRun>(`/api/v1/jobs/${id}/run`, "POST", { parameters, only }),
   jobRuns: (id: string) => send<JobRun[]>(`/api/v1/jobs/${id}/runs`, "GET"),
   recentRuns: () => send<JobRun[]>("/api/v1/job-runs", "GET"),
   jobRun: (id: string) => send<JobRun>(`/api/v1/job-runs/${id}`, "GET"),

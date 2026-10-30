@@ -55,6 +55,39 @@ def _run(code: str, scope: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+HIDDEN_VARS = {"__name__", "__builtins__", "__doc__", "__package__", "__loader__", "__spec__"}
+
+
+def _describe(value: Any) -> dict[str, Any]:
+    kind = type(value).__name__
+    detail = ""
+    try:
+        if hasattr(value, "columns") and hasattr(value, "shape"):  # pandas
+            detail = f"{value.shape[0]} x {value.shape[1]}"
+        elif hasattr(value, "columns") and hasattr(value, "schema"):  # Spark DataFrame
+            detail = ", ".join(str(c) for c in value.columns[:6])
+        elif isinstance(value, (list, tuple, set, dict)):
+            detail = f"{len(value)} items"
+        else:
+            detail = repr(value)[:120]
+    except Exception:  # noqa: BLE001 - describing must never fail
+        detail = ""
+    return {"type": kind, "detail": detail}
+
+
+def _variables(scope: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for name, value in scope.items():
+        if name in HIDDEN_VARS or name.startswith("__"):
+            continue
+        if callable(value) and getattr(value, "__module__", "") == "builtins":
+            continue
+        if type(value).__name__ == "module":
+            continue
+        out.append({"name": name, **_describe(value)})
+    return sorted(out, key=lambda v: v["name"])
+
+
 def main() -> None:
     protocol = sys.stdout
     scope: dict[str, Any] = {"__name__": "__main__"}
@@ -70,6 +103,9 @@ def main() -> None:
     print(json.dumps({"ready": True, "error": boot_error}), file=protocol, flush=True)
     for line in sys.stdin:
         request = json.loads(line)
+        if request.get("command") == "variables":
+            print(json.dumps({"variables": _variables(scope)}, default=str), file=protocol, flush=True)
+            continue
         out, err = io.StringIO(), io.StringIO()
         started = time.perf_counter()
         result, error = None, None

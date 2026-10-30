@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import Nav from "@/components/Nav";
 import Palette from "@/components/Palette";
 import { ToastProvider } from "@/components/Toast";
+import { ConfirmProvider } from "@/components/kit";
+import Shortcuts from "@/components/Shortcuts";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,13 +16,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <ToastProvider>
+        <ToastProvider><ConfirmProvider>
           <div className="shell">
             <Nav />
             <main className="main">{children}</main>
             <Palette />
+            <Shortcuts />
           </div>
-        </ToastProvider>
+        </ConfirmProvider></ToastProvider>
       </body>
     </html>
   );

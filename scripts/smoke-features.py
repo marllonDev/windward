@@ -338,6 +338,103 @@ def _() -> str:
     return "removed smoke_shop"
 
 
+@check("SQL: a long query can be cancelled")
+def _() -> str:
+    import threading
+
+    box: dict[str, Any] = {}
+
+    def run() -> None:
+        box["result"] = sql("select count(*) from range(9000000000) where id % 7 = 3")
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    time.sleep(2)
+    _, running = call("GET", "/api/v1/queries/running")
+    assert running, "the query should be listed as running"
+    call("POST", f"/api/v1/queries/{running[0]['query_id']}/cancel")
+    worker.join(timeout=60)
+    status, body = box["result"]
+    assert status == 499 and body["error"]["code"] == "QUERY_CANCELLED", (status, body)
+    _, after = call("GET", "/api/v1/queries/running")
+    assert after == [], after
+    _, recent = call("GET", "/api/v1/queries/recent")
+    assert recent[0]["state"] == "cancelled", recent[0]
+    return "499 QUERY_CANCELLED, run list cleared"
+
+
+@check("catalog: profile, DDL and cross-database search")
+def _() -> str:
+    _, profile = call("GET", "/api/v1/catalog/profile?database=demo&table=route_summary")
+    assert profile["row_count"] == 3 and len(profile["columns"]) == 5, profile
+    route = next(c for c in profile["columns"] if c["name"] == "route")
+    assert route["nulls"] == 0 and route["distinct"] == 3, route
+    fare = next(c for c in profile["columns"] if c["name"] == "total_fare")
+    assert fare["min"] is not None and fare["max"] is not None, fare
+    _, ddl = call("GET", "/api/v1/catalog/ddl?database=demo&table=stg_trips")
+    assert "stg_trips" in ddl["ddl"], ddl
+    _, hits = call("GET", "/api/v1/catalog/search?q=fare")
+    assert any(h["kind"] == "column" and "fare" in h["label"] for h in hits), hits
+    return f"{profile['row_count']} rows profiled, {len(hits)} search hits"
+
+
+@check("notebooks: the kernel reports its variables")
+def _() -> str:
+    _, nb = call("POST", "/api/v1/notebooks", {"name": "smoke-vars", "cells": []})
+    nid = nb["id"]
+    call("POST", f"/api/v1/notebooks/{nid}/python", {"code": "import pandas as pd\nframe = pd.DataFrame({'a': [1, 2]})\nnumber = 7"})
+    _, body = call("GET", f"/api/v1/notebooks/{nid}/variables")
+    names = {v["name"]: v for v in body["variables"]}
+    assert body["live"] and "frame" in names and "number" in names, body
+    assert names["frame"]["type"] == "DataFrame" and names["frame"]["detail"] == "2 x 1", names["frame"]
+    call("DELETE", f"/api/v1/notebooks/{nid}")
+    return "frame: DataFrame 2 x 1, number: int"
+
+
+@check("jobs: parameters, retries and run-from-here")
+def _() -> str:
+    call("DELETE", "/api/v1/dbt2/projects/smoke_param")
+    job = {
+        "name": "smoke params",
+        "parameters": [{"name": "label", "default": "alpha", "description": ""}],
+        "tasks": [
+            {"key": "first", "type": "sql", "config": {"sql": "select '{{ label }}' as label"}},
+            {"key": "flaky", "type": "python", "depends_on": ["first"], "retries": 2, "retry_delay_seconds": 0,
+             "config": {"code": "import pathlib\np = pathlib.Path('/tmp/smoke_attempts')\nn = int(p.read_text()) + 1 if p.exists() else 1\np.write_text(str(n))\nprint('attempt', n)\nassert n >= 3, 'not yet'"}},
+            {"key": "last", "type": "sql", "depends_on": ["flaky"], "config": {"sql": "select 2"}},
+        ],
+    }
+    status, created = call("POST", "/api/v1/jobs", job)
+    assert status == 201, created
+    _, run = call("POST", f"/api/v1/jobs/{created['id']}/run", {"parameters": {"label": "beta"}})
+    done = poll(f"/api/v1/job-runs/{run['id']}", lambda r: r["status"] != "running", tries=60)
+    assert done["status"] == "succeeded", [(t["key"], t["status"], t["error"]) for t in done["tasks"]]
+    first = next(t for t in done["tasks"] if t["key"] == "first")
+    assert first["output"]["rows"] == [["beta"]], first["output"]
+    flaky = next(t for t in done["tasks"] if t["key"] == "flaky")
+    assert flaky["attempt"] == 3, flaky["attempt"]
+    _, partial = call("POST", f"/api/v1/jobs/{created['id']}/run", {"only": ["last"]})
+    assert [t["key"] for t in partial["tasks"]] == ["last"], partial["tasks"]
+    poll(f"/api/v1/job-runs/{partial['id']}", lambda r: r["status"] != "running", tries=30, pause=1)
+    call("DELETE", f"/api/v1/jobs/{created['id']}")
+    return "parameter substituted, succeeded on attempt 3, run-from-here ran 1 task"
+
+
+@check("dbt 2: compiled SQL and project search")
+def _() -> str:
+    call("DELETE", "/api/v1/dbt2/projects/smoke_c")
+    call("POST", "/api/v1/dbt2/projects", {"name": "smoke_c"})
+    _, run = call("POST", "/api/v1/dbt2/projects/smoke_c/runs", {"command": "build"})
+    run = poll(f"/api/v1/dbt2/runs/{run['run_id']}", lambda r: r["status"] != "running")
+    assert run["status"] == "succeeded", "\n".join(run["log"][-8:])
+    status, compiled = call("GET", "/api/v1/dbt2/projects/smoke_c/compiled?path=models/marts/customer_orders.sql")
+    assert status == 200 and "{{" not in compiled["content"] and "from" in compiled["content"].lower(), compiled
+    _, hits = call("GET", "/api/v1/dbt2/projects/smoke_c/search?q=customer")
+    assert any(h["path"].endswith("customer_orders.sql") for h in hits), hits
+    call("DELETE", "/api/v1/dbt2/projects/smoke_c")
+    return f"Jinja resolved, {len(hits)} search hits"
+
+
 @check("web pages render through the proxy")
 def _() -> str:
     if BASE.endswith(":8000"):

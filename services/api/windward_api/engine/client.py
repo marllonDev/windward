@@ -17,7 +17,7 @@ from .types import QueryResult
 
 @runtime_checkable
 class EngineClient(Protocol):
-    def execute_sql(self, sql: str, *, max_rows: int) -> QueryResult:
+    def execute_sql(self, sql: str, *, max_rows: int, tag: str | None = None) -> QueryResult:
         """Run one statement and return at most ``max_rows`` rows.
 
         Raises
@@ -27,6 +27,9 @@ class EngineClient(Protocol):
         windward_api.errors.QueryFailedError
             The engine rejected or failed the statement.
         """
+
+    def cancel(self, tag: str) -> None:
+        """Interrupt whatever is running under ``tag``. Never raises."""
 
     def engine_version(self) -> str | None:
         """The version the engine reports over its own protocol, or None."""

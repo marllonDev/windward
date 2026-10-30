@@ -12,6 +12,7 @@ from ..errors import InvalidRequestError
 
 TaskType = Literal["sql", "notebook", "python", "dbt_sail", "dbt2"]
 KEY = re.compile(r"^[a-zA-Z][\w-]{0,39}$")
+PARAM = re.compile(r"\{\{\s*([a-zA-Z_]\w*)\s*\}\}")
 
 #: Config keys each task type needs, so a bad Job fails when saved, not at 3 a.m.
 REQUIRED: dict[str, tuple[str, ...]] = {
@@ -30,6 +31,16 @@ class TaskIn(BaseModel):
     depends_on: list[str] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
     timeout_seconds: int = Field(default=3600, ge=1, le=86400)
+    retries: int = Field(default=0, ge=0, le=5)
+    retry_delay_seconds: int = Field(default=30, ge=0, le=3600)
+    #: Downstream tasks still run when this one fails (the run is still marked failed).
+    continue_on_failure: bool = False
+
+
+class ParameterIn(BaseModel):
+    name: str
+    default: str = ""
+    description: str = ""
 
 
 class ScheduleIn(BaseModel):
@@ -41,10 +52,23 @@ class JobIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     schedule: ScheduleIn | None = None
+    parameters: list[ParameterIn] = Field(default_factory=list)
     tasks: list[TaskIn] = Field(min_length=1, max_length=50)
 
 
+def render(text: str, params: dict[str, str]) -> str:
+    """Replace `{{ name }}` with the parameter value. Unknown names are left alone."""
+
+    def swap(match: re.Match[str]) -> str:
+        return params.get(match.group(1), match.group(0))
+
+    return PARAM.sub(swap, text)
+
+
 def validate_job(job: JobIn) -> None:
+    for parameter in job.parameters:
+        if not KEY.match(parameter.name):
+            raise InvalidRequestError(f"Parameter {parameter.name!r} must be a plain name.")
     keys = [t.key for t in job.tasks]
     for key in keys:
         if not KEY.match(key):

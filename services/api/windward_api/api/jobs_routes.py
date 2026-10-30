@@ -41,6 +41,7 @@ def _spec(job: JobIn) -> dict[str, Any]:
     return {
         "description": job.description,
         "schedule": job.schedule.model_dump() if job.schedule else None,
+        "parameters": [p.model_dump() for p in job.parameters],
         "tasks": [t.model_dump() for t in job.tasks],
     }
 
@@ -98,11 +99,20 @@ async def delete_job(job_id: str, store: StoreDep, jobs: JobsDep) -> None:
     del jobs
 
 
+class RunIn(BaseModel):
+    parameters: dict[str, str] = Field(default_factory=dict)
+    #: Run only these tasks and everything downstream of them ("run from here").
+    only: list[str] = Field(default_factory=list)
+
+
 @router.post("/jobs/{job_id}/run", status_code=status.HTTP_202_ACCEPTED)
-async def run_job(job_id: str, store: StoreDep, jobs: JobsDep) -> dict[str, Any]:
+async def run_job(
+    job_id: str, store: StoreDep, jobs: JobsDep, payload: RunIn | None = None
+) -> dict[str, Any]:
     if store.get_job(job_id) is None:
         raise NotFound("No job with that id.")
-    return _summary(jobs.start(job_id))
+    body = payload or RunIn()
+    return _summary(jobs.start(job_id, "manual", body.parameters, body.only or None))
 
 
 @router.get("/jobs/{job_id}/runs")
@@ -207,6 +217,16 @@ async def dbt2_runs(name: str, svc: Dbt2Dep) -> list[dict[str, Any]]:
 @router.get("/dbt2/runs/{run_id}")
 async def dbt2_run(run_id: str, svc: Dbt2Dep, after: Annotated[int, Query(ge=0)] = 0) -> dict[str, Any]:
     return _render(svc.get(run_id), after)
+
+
+@router.get("/dbt2/projects/{name}/compiled")
+async def dbt2_compiled(name: str, svc: Dbt2Dep, path: Annotated[str, Query(min_length=1)]) -> dict[str, str]:
+    return {"path": path, "content": svc.compiled(name, path)}
+
+
+@router.get("/dbt2/projects/{name}/search")
+async def dbt2_search(name: str, svc: Dbt2Dep, q: Annotated[str, Query(min_length=2)]):
+    return svc.grep(name, q)
 
 
 @router.get("/dbt2/projects/{name}/graph")

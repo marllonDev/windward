@@ -139,6 +139,22 @@ while the API was down are not replayed, a job whose previous run is still going
 skipped, and runs interrupted by a restart are marked failed. `dbt_sail` tasks share
 one runner, so two Jobs queue on each other; dbt 2 projects run one at a time each.
 
+### Cancelling a query interrupts it on the engine, not always instantly
+
+`POST /api/v1/queries/{id}/cancel` tags the statement and calls Spark Connect's
+`interruptTag`. Sail stops the operation at its next checkpoint, so a cancel is a
+request, not a guarantee of an immediate stop, and the API answers `499
+QUERY_CANCELLED` once the client sees the interruption. The console's Cancel button
+cancels every statement currently running, because v0 has one session per user.
+
+### Profiling reads the whole table
+
+The catalog's column profile is one aggregate over the table (null counts, distinct
+estimates, min/max). On a large table it costs a full scan, and the distinct count is
+an estimate computed over the value cast to a string, because Sail 0.7.3 has no
+`approx_distinct` for floating-point columns. The per-column statistics in a result
+grid are different: those are computed in the browser over the rows on screen only.
+
 ## Product behavior
 
 Not yet applicable: M0 ships no application code (`apps/web`, `services/api`,

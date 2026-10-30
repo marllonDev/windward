@@ -26,7 +26,7 @@ from ..errors import InvalidRequestError, WindwardError
 from ..kernel import KernelManager
 from ..query.service import QueryService
 from ..store import Store
-from .spec import split_statements
+from .spec import render, split_statements
 
 logger = logging.getLogger(__name__)
 
@@ -88,17 +88,28 @@ class JobRunner:
             if j == job_id and r in self._active
         )
 
-    def start(self, job_id: str, trigger: str = "manual") -> dict[str, Any]:
+    def start(
+        self,
+        job_id: str,
+        trigger: str = "manual",
+        parameters: dict[str, str] | None = None,
+        only: list[str] | None = None,
+    ) -> dict[str, Any]:
         job = self._store.get_job(job_id)
         if job is None:
             raise InvalidRequestError("No job with that id.")
+        values = {p["name"]: p.get("default", "") for p in job.get("parameters", [])}
+        values.update({k: str(v) for k, v in (parameters or {}).items()})
+        selected = self._expand(job, only)
+        job = {**job, "tasks": [t for t in job["tasks"] if t["key"] in selected]}
         run = {
             "id": str(uuid4()), "job_id": job_id, "job_name": job["name"], "status": "running",
-            "trigger": trigger, "started_at": _now(), "finished_at": None,
+            "trigger": trigger, "started_at": _now(), "finished_at": None, "parameters": values,
             "tasks": [
                 {
                     "key": t["key"], "name": t.get("name") or t["key"], "type": t["type"],
-                    "depends_on": t.get("depends_on", []), "status": "pending", "started_at": None,
+                    "depends_on": [d for d in t.get("depends_on", []) if d in selected],
+                    "status": "pending", "started_at": None, "attempt": 0,
                     "finished_at": None, "log": [], "output": None, "error": None,
                 }
                 for t in job["tasks"]
@@ -106,8 +117,28 @@ class JobRunner:
         }  # fmt: skip
         self._store.insert_run(run)
         self._job_of_run[run["id"]] = job_id
-        self._active[run["id"]] = asyncio.create_task(self._execute(run, job))
+        self._active[run["id"]] = asyncio.create_task(self._execute(run, job, values))
         return run
+
+    @staticmethod
+    def _expand(job: dict[str, Any], only: list[str] | None) -> set[str]:
+        """`only` plus everything downstream of it — running a task alone would leave
+        its dependants stale, and that is the "run from here" the UI offers."""
+        keys = {t["key"] for t in job["tasks"]}
+        if not only:
+            return keys
+        unknown = [k for k in only if k not in keys]
+        if unknown:
+            raise InvalidRequestError(f"Unknown task(s): {', '.join(unknown)}.")
+        selected = set(only)
+        changed = True
+        while changed:
+            changed = False
+            for task in job["tasks"]:
+                if task["key"] not in selected and selected.intersection(task.get("depends_on", [])):
+                    selected.add(task["key"])
+                    changed = True
+        return selected
 
     def cancel(self, run_id: str) -> bool:
         task = self._active.get(run_id)
@@ -122,20 +153,24 @@ class JobRunner:
             del task["log"][:-MAX_LOG_LINES]
         self._store.update_run(run)
 
-    async def _execute(self, run: dict[str, Any], job: dict[str, Any]) -> None:
+    async def _execute(self, run: dict[str, Any], job: dict[str, Any], params: dict[str, str]) -> None:
         specs = {t["key"]: t for t in job["tasks"]}
         states = {t["key"]: t for t in run["tasks"]}
         pending, running = set(specs), {}
         try:
             while pending or running:
                 for key in sorted(pending):
-                    deps = specs[key].get("depends_on", [])
-                    if any(states[d]["status"] in BAD for d in deps):
+                    deps = [d for d in specs[key].get("depends_on", []) if d in states]
+                    if any(
+                        states[d]["status"] in BAD and not specs[d].get("continue_on_failure") for d in deps
+                    ):
                         states[key].update(status="skipped", error="An upstream task did not succeed.")
                         pending.discard(key)
-                    elif all(states[d]["status"] == "succeeded" for d in deps):
+                    elif all(states[d]["status"] not in ("pending", "running") for d in deps):
                         pending.discard(key)
-                        running[key] = asyncio.create_task(self._run_task(run, specs[key], states[key]))
+                        running[key] = asyncio.create_task(
+                            self._run_task(run, specs[key], states[key], params)
+                        )
                 self._save(run)
                 if not running:
                     break
@@ -158,30 +193,44 @@ class JobRunner:
         run["finished_at"] = _now()
         self._save(run)
 
-    async def _run_task(self, run: dict[str, Any], spec: dict[str, Any], state: dict[str, Any]) -> None:
-        state.update(status="running", started_at=_now())
-        self._save(run)
+    async def _run_task(
+        self, run: dict[str, Any], spec: dict[str, Any], state: dict[str, Any], params: dict[str, str]
+    ) -> None:
+        attempts = spec.get("retries", 0) + 1
+        resolved = {**spec, "config": {
+            k: render(v, params) if isinstance(v, str) else v for k, v in spec["config"].items()
+        }}  # fmt: skip
         log = state["log"]
-        started = time.perf_counter()
-        try:
-            handler = getattr(self, f"_task_{spec['type']}")
-            await asyncio.wait_for(
-                handler(run["id"], spec, state, log), timeout=spec.get("timeout_seconds", 3600)
+        for attempt in range(1, attempts + 1):
+            state.update(
+                status="running", started_at=state["started_at"] or _now(), attempt=attempt, error=None
             )
-            state["status"] = "succeeded"
-        except asyncio.CancelledError:
-            state["status"] = "cancelled"
-            raise
-        except TimeoutError:
-            state.update(status="failed", error=f"Timed out after {spec.get('timeout_seconds', 3600)} s.")
-        except TaskFailed as exc:
-            state.update(status="failed", error=str(exc))
-        except WindwardError as exc:
-            state.update(status="failed", error=exc.message)
-        except Exception as exc:
-            logger.exception("task %s crashed", spec["key"])
-            state.update(status="failed", error=f"{type(exc).__name__}: {exc}")
-        log.append(f"-- {state['status']} in {time.perf_counter() - started:.1f}s")
+            if attempt > 1:
+                log.append(f"-- retry {attempt - 1} of {attempts - 1}")
+            self._save(run)
+            started = time.perf_counter()
+            try:
+                handler = getattr(self, f"_task_{spec['type']}")
+                await asyncio.wait_for(
+                    handler(run["id"], resolved, state, log), timeout=spec.get("timeout_seconds", 3600)
+                )
+                state["status"] = "succeeded"
+            except asyncio.CancelledError:
+                state["status"] = "cancelled"
+                raise
+            except TimeoutError:
+                state.update(status="failed", error=f"Timed out after {spec.get('timeout_seconds', 3600)} s.")
+            except TaskFailed as exc:
+                state.update(status="failed", error=str(exc))
+            except WindwardError as exc:
+                state.update(status="failed", error=exc.message)
+            except Exception as exc:
+                logger.exception("task %s crashed", spec["key"])
+                state.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+            log.append(f"-- {state['status']} in {time.perf_counter() - started:.1f}s")
+            if state["status"] == "succeeded" or attempt == attempts:
+                break
+            await asyncio.sleep(spec.get("retry_delay_seconds", 30))
         state["finished_at"] = _now()
         self._save(run)
 

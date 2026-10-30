@@ -307,6 +307,17 @@ class SailSupervisor:
             return False
         return True
 
+    async def restart(self) -> None:
+        """Stop and start the listeners. The catalog does not survive this (see
+        KNOWN-LIMITATIONS); callers are expected to restore what they own."""
+        logger.warning("restarting the Sail engine on request")
+        for listener in self._listeners.values():
+            listener.stop()
+        self._generation += 1
+        for listener in self._listeners.values():
+            listener.restart_not_before = 0.0
+            listener.start()
+
     async def stop(self) -> None:
         self._stopping = True
         task = self._watch_task

@@ -40,3 +40,18 @@ produced a working build plus `manifest.json` and `run_results.json`.
 - The scheduler lives in the API process; there is no worker tier (ADR-0002 option D
   stays rejected for v0).
 - Python and notebook tasks run unsandboxed (see KNOWN-LIMITATIONS).
+
+## Addendum — run control and parameters (2026-10-30)
+
+- **Retries** per task (up to 5, with a delay), **continue-on-failure** so a
+  non-critical task does not stop the graph, and a per-task **timeout** that marks the
+  attempt failed.
+- **Parameters**: a job declares names with defaults; a run may override them; task
+  SQL, Python and dbt selectors substitute `{{ name }}` before the task starts.
+  Unknown names are left untouched rather than erroring, so a stray `{{ }}` in SQL is
+  not a trap.
+- **Run from here** sends `only: [key]`; the runner expands it to that task plus
+  everything downstream, because running one task alone would leave its dependants
+  stale.
+- Runs are stored with their parameters, each task's attempt number and timings, which
+  is what the run timeline draws.

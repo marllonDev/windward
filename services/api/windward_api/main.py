@@ -27,6 +27,7 @@ from .engine.supervisor import SailSupervisor
 from .errors import WindwardError, install_exception_handlers
 from .jobs import JobRunner
 from .kernel import KernelManager
+from .query.catalog import CatalogService
 from .query.service import QueryService
 from .query.uploads import UploadService
 from .store import Store
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.store = Store(resolved.resolved_store_path)
         app.state.kernels = KernelManager(resolved)
         app.state.uploads = UploadService(resolved, app.state.query_service)
+        app.state.catalog = CatalogService(app.state.query_service)
         app.state.dbt2 = Dbt2Service(resolved)
         app.state.jobs = JobRunner(
             resolved, app.state.store, app.state.query_service, app.state.kernels,
@@ -84,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine_client.on_session_rotated = lambda: loop.call_soon_threadsafe(
             lambda: asyncio.create_task(restore_after_session_loss())
         )
+        app.state.restore_engine_state = lambda: asyncio.create_task(restore_after_session_loss())
 
         await supervisor.start()
         if await supervisor.wait_until_running(resolved.engine_start_timeout_seconds):

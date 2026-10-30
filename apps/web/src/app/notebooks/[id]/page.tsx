@@ -8,8 +8,29 @@ import CodeEditor from "@/components/CodeEditor";
 import ResultPanel from "@/components/ResultPanel";
 import { useToast } from "@/components/Toast";
 import { ErrorState, Icon, StatusBadge } from "@/components/ui";
+import { CopyButton, Modal, Skeleton, useConfirm } from "@/components/kit";
+import { download } from "@/lib/format";
 
 const MAX_STORED_ROWS = 200;
+
+/** A .ipynb that Jupyter opens: SQL cells become %%sql-tagged code so nothing is lost. */
+function toIpynb(name: string, cells: Cell[]): string {
+  return JSON.stringify({
+    nbformat: 4, nbformat_minor: 5,
+    metadata: { kernelspec: { name: "python3", display_name: "Python 3" }, windward: { name } },
+    cells: cells.map((c) => ({
+      cell_type: c.type === "markdown" ? "markdown" : "code",
+      metadata: c.type === "sql" ? { windward_cell_type: "sql" } : {},
+      source: (c.type === "sql" ? `%%sql\n${c.source}` : c.source).split("\n").map((l, i, a) => (i === a.length - 1 ? l : l + "\n")),
+      ...(c.type === "markdown" ? {} : { execution_count: null, outputs: [] }),
+    })),
+  }, null, 1);
+}
+
+function toMarkdownDoc(name: string, cells: Cell[]): string {
+  return [`# ${name}`, ...cells.map((c) =>
+    c.type === "markdown" ? c.source : `\n\`\`\`${c.type}\n${c.source}\n\`\`\``)].join("\n\n");
+}
 type Cell = NotebookCell & { output?: (CellOutput & { count?: number }) | null };
 
 function markdown(src: string): string {
@@ -45,6 +66,10 @@ export default function NotebookPage() {
   const [dirty, setDirty] = useState<"saved" | "saving" | "unsaved">("saved");
   const [editingMd, setEditingMd] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [vars, setVars] = useState<{ live: boolean; variables: { name: string; type: string; detail: string }[] } | null>(null);
+  const [showVars, setShowVars] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const confirm = useConfirm();
   const [counter, setCounter] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef<typeof nb>(null);
@@ -137,8 +162,19 @@ export default function NotebookPage() {
     return { ...n, cells: [...n.cells.slice(0, i), { ...c, id: crypto.randomUUID(), output: null }, ...n.cells.slice(i)] };
   });
 
+  const refreshVars = useCallback(async () => {
+    try { setVars(await api.kernelVariables(id)); } catch { setVars({ live: false, variables: [] }); }
+  }, [id]);
+
+  useEffect(() => {
+    if (!showVars) return;
+    refreshVars();
+    const t = setInterval(refreshVars, 4000);
+    return () => clearInterval(t);
+  }, [showVars, refreshVars]);
+
   if (error) return <div className="page"><div className="card"><ErrorState title="Couldn't open this notebook" error={error.message} /></div></div>;
-  if (!nb) return <div className="page"><div className="caption">Loading…</div></div>;
+  if (!nb) return <div className="page"><Skeleton rows={6} height={26} /></div>;
 
   const Adder = ({ after }: { after?: string }) => (
     <div className="nbadd"><div className="nbadd-inner">
@@ -154,11 +190,39 @@ export default function NotebookPage() {
         <div className="row-actions">
           <StatusBadge status={dirty === "saved" ? "success" : dirty === "saving" ? "running" : "warning"} label={dirty} />
           <span className={`kernel ${running ? "busy" : ""}`} title="Python kernel"><span className="dot" aria-hidden="true" /> {running ? "Kernel busy" : "Kernel idle"}</span>
-          <button className="btn sm" onClick={() => { api.restartKernel(id); toast("Kernel restarted — Python variables cleared"); }}>Restart kernel</button>
+          <button className="btn sm" onClick={() => setShowVars((v) => !v)} aria-pressed={showVars}>Variables</button>
+          <div className="menu-wrap">
+            <button className="btn sm" onClick={() => setExportOpen((v) => !v)} aria-expanded={exportOpen}>Export ▾</button>
+            {exportOpen && <div className="menu" onMouseLeave={() => setExportOpen(false)}>
+              <button onClick={() => { download(`${nb.name}.ipynb`, toIpynb(nb.name, nb.cells), "application/json"); setExportOpen(false); }}>Jupyter (.ipynb)</button>
+              <button onClick={() => { download(`${nb.name}.sql`, nb.cells.filter((c) => c.type === "sql").map((c) => c.source.trim().replace(/;*$/, ";")).join("\n\n"), "text/plain"); setExportOpen(false); }}>SQL only</button>
+              <button onClick={() => { download(`${nb.name}.md`, toMarkdownDoc(nb.name, nb.cells), "text/markdown"); setExportOpen(false); }}>Markdown</button>
+            </div>}
+          </div>
+          <button className="btn sm" onClick={async () => {
+            if (await confirm({ title: "Restart the kernel?", body: "Python variables and imports are cleared. SQL cells are unaffected.", confirm: "Restart" })) {
+              await api.restartKernel(id); setVars({ live: false, variables: [] }); toast("Kernel restarted");
+            }
+          }}>Restart kernel</button>
           <button className="btn sm" onClick={() => change((n) => ({ ...n, cells: n.cells.map((c) => ({ ...c, output: null })) }))}>Clear outputs</button>
           <button className="btn sm primary" onClick={runAll} disabled={running !== null}><Icon name="play" size={12} /> Run all</button>
         </div>
       </div>
+      {showVars && (
+        <div className="varbar">
+          <div className="row-actions" style={{ marginBottom: 6 }}>
+            <span className="label" style={{ flex: 1 }}>Kernel variables</span>
+            <span className="caption">{vars?.live ? "kernel running" : "kernel not started"}</span>
+            <button className="btn ghost sm" onClick={refreshVars}><Icon name="refresh" size={13} /></button>
+            <button className="btn ghost sm" onClick={() => setShowVars(false)}>Hide</button>
+          </div>
+          {!vars ? <Skeleton rows={2} /> : vars.variables.length === 0
+            ? <div className="caption">Nothing defined yet. Run a Python cell.</div>
+            : <table className="tbl"><tbody>{vars.variables.map((v) => (
+                <tr key={v.name}><td className="mono" style={{ width: 160 }}>{v.name}</td>
+                  <td className="caption" style={{ width: 120 }}>{v.type}</td>
+                  <td className="mono caption">{v.detail}</td></tr>))}</tbody></table>}
+        </div>)}
       <div className="nbcells">
         {nb.cells.map((c) => {
           const state = running === c.id ? "running" : c.output?.error ? "err" : c.output ? "ok" : "";
@@ -182,6 +246,7 @@ export default function NotebookPage() {
                     <div style={{ flex: 1 }} />
                     <div className="nbactions">
                       {c.type === "sql" && <button className="btn ghost sm" onClick={() => setCell(c.id, { source: formatSql(c.source) })}>Format</button>}
+                      <CopyButton small label="Copy" text={c.source} />
                       {c.output && <button className="btn ghost sm" onClick={() => setCollapsed((s) => { const n = new Set(s); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}>{hidden ? "Show output" : "Hide output"}</button>}
                       <button className="btn ghost sm" aria-label="Move up" onClick={() => move(c.id, -1)}>↑</button>
                       <button className="btn ghost sm" aria-label="Move down" onClick={() => move(c.id, 1)}>↓</button>

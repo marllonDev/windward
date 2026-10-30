@@ -8,6 +8,7 @@ import Dag from "@/components/Dag";
 import ResultPanel from "@/components/ResultPanel";
 import { useToast } from "@/components/Toast";
 import { EmptyState, ErrorState, Icon, PageHead, StatusBadge } from "@/components/ui";
+import { CopyButton, Modal, Segmented, Skeleton, useConfirm } from "@/components/kit";
 import type { Language } from "@/lib/highlight";
 
 const COMMANDS = ["parse", "compile", "seed", "run", "test", "build"] as const;
@@ -20,13 +21,18 @@ export default function Dbt2Project() {
   const [path, setPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [saved, setSaved] = useState("");
-  const [panel, setPanel] = useState<"run" | "lineage" | "data">("run");
+  const [panel, setPanel] = useState<"run" | "lineage" | "data" | "compiled">("run");
   const [run, setRun] = useState<Dbt2Run | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [select, setSelect] = useState("");
   const [sql, setSql] = useState("select * from customer_orders limit 100");
   const [data, setData] = useState<{ columns: string[]; rows: unknown[][]; truncated: boolean } | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [compiled, setCompiled] = useState<string | null>(null);
+  const [find, setFind] = useState("");
+  const [hits, setHits] = useState<{ path: string; line: number; text: string }[] | null>(null);
+  const [newFile, setNewFile] = useState<string | null>(null);
+  const confirm = useConfirm();
   const offset = useRef(0);
   const logEl = useRef<HTMLDivElement>(null);
   const graph = usePoll(() => api.dbt2Graph(name), 10000);
@@ -90,10 +96,25 @@ export default function Dbt2Project() {
         </>} />
       <div className="ide">
         <div className="card ide-tree tree">
-          <div className="row-actions" style={{ padding: 8 }}>
-            <span className="label" style={{ flex: 1 }}>Files</span>
-            <button className="btn ghost sm" onClick={async () => { const p = window.prompt("New file path (e.g. models/marts/orders.sql)"); if (!p) return; try { await api.dbt2Write(name, p, ""); await files.refresh(); setPath(p); } catch (e) { toast((e as Error).message, "error"); } }}>+ New</button>
+          <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="row-actions">
+              <span className="label" style={{ flex: 1 }}>Files</span>
+              <button className="btn ghost sm" onClick={() => setNewFile("models/")}>+ New</button>
+            </div>
+            <input className="input" placeholder="Search in project" aria-label="Search in project" value={find}
+              onChange={async (e) => {
+                setFind(e.target.value);
+                if (e.target.value.trim().length < 2) { setHits(null); return; }
+                try { setHits(await api.dbt2Search(name, e.target.value.trim())); } catch { setHits([]); }
+              }} />
           </div>
+          {hits && <div className="searchhits">
+            {hits.length === 0 ? <div className="caption" style={{ padding: 8 }}>No matches.</div>
+              : hits.slice(0, 40).map((h, i) => (
+                <button key={i} className="row" onClick={() => { setPath(h.path); setHits(null); setFind(""); }}>
+                  <span style={{ minWidth: 0 }}><span className="mono clip">{h.path}:{h.line}</span>
+                    <span className="caption clip">{h.text}</span></span></button>))}
+          </div>}
           {tree.map(([dir, items]) => (
             <div key={dir}>
               {dir && <div className="caption" style={{ padding: "6px 12px 2px" }}>{dir}/</div>}
@@ -107,18 +128,32 @@ export default function Dbt2Project() {
             <span className="mono">{path ?? "Select a file"}</span>{dirty && <span className="caption">● unsaved</span>}
             <div style={{ flex: 1 }} />
             <button className="btn sm" disabled={!dirty} onClick={save}>Save</button>
-            <button className="btn ghost sm" disabled={!path} onClick={() => path && confirm(`Delete ${path}?`) && api.dbt2DeleteFile(name, path).then(() => { setPath(null); files.refresh(); })}>Delete</button>
+            <CopyButton small text={content} />
+            <button className="btn ghost sm" disabled={!path} onClick={async () => {
+              if (path && await confirm({ title: `Delete ${path}?`, confirm: "Delete", danger: true })) {
+                await api.dbt2DeleteFile(name, path); setPath(null); files.refresh();
+              }
+            }}>Delete</button>
           </div>
           {path ? <CodeEditor key={path} language={langOf(path)} value={content} onChange={setContent} onSave={save} minLines={14} maxLines={30} ariaLabel={`Editing ${path}`} />
             : <div className="card"><EmptyState icon="table" title="Pick a file to edit" /></div>}
-          <div className="tabs" role="tablist">
-            {(["run", "lineage", "data"] as const).map((t) => <button key={t} role="tab" aria-selected={panel === t} onClick={() => setPanel(t)}>{t === "run" ? "Run & logs" : t === "lineage" ? "Lineage" : "Data (DuckDB)"}</button>)}
-          </div>
+          <Segmented size="sm" value={panel} onChange={(v) => {
+            setPanel(v);
+            if (v === "compiled" && path) api.dbt2Compiled(name, path).then((r) => setCompiled(r.content)).catch((e) => setCompiled(`-- ${(e as Error).message}`));
+          }} options={[
+            { value: "run", label: "Run & logs" }, { value: "compiled", label: "Compiled SQL" },
+            { value: "lineage", label: "Lineage" }, { value: "data", label: "Data (DuckDB)" }]} />
           {panel === "run" && <>
             <div className="row-actions"><input className="input mono" style={{ maxWidth: 260 }} placeholder="--select (e.g. stg_orders+)" aria-label="dbt select" value={select} onChange={(e) => setSelect(e.target.value)} />
               {run && <StatusBadge status={run.status} label={`${run.command} ${run.status}`} />}</div>
             <div className="log" ref={logEl} role="log">{log.length ? log.join("\n") : "Run a dbt 2 command to see its output."}</div>
           </>}
+          {panel === "compiled" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="row-actions"><span className="caption">Jinja resolved by dbt. Run compile or build to refresh it.</span>
+                <div style={{ flex: 1 }} />{compiled && <CopyButton small text={compiled} />}</div>
+              {compiled === null ? <Skeleton rows={4} /> : <CodeEditor language="sql" value={compiled} onChange={() => undefined} readOnly minLines={10} maxLines={26} ariaLabel="Compiled SQL" />}
+            </div>)}
           {panel === "lineage" && (graph.error && !graph.data ? <ErrorState title="Couldn't read the graph" error={graph.error.message} />
             : !graph.data?.parsed ? <div className="card"><EmptyState icon="dbt" title="No graph yet" hint="Run dbt parse or dbt build to generate the manifest." /></div>
             : <Dag nodes={graph.data.nodes.map((n) => ({ id: n.unique_id, label: n.name, sub: `${n.resource_type}${n.materialized ? ` · ${n.materialized}` : ""}`, status: statusOf(n.unique_id), deps: n.depends_on }))} />)}
@@ -131,6 +166,17 @@ export default function Dbt2Project() {
           </div>}
         </div>
       </div>
+      {newFile !== null && (
+        <Modal title="New file" onClose={() => setNewFile(null)}
+          footer={<><button className="btn" onClick={() => setNewFile(null)}>Cancel</button>
+            <button className="btn primary" onClick={async () => {
+              try { await api.dbt2Write(name, newFile, ""); await files.refresh(); setPath(newFile); setNewFile(null); }
+              catch (e) { toast((e as Error).message, "error"); }
+            }}>Create</button></>}>
+          <label className="field"><span className="field-label">Path inside the project</span>
+            <input className="input mono" autoFocus value={newFile} onChange={(e) => setNewFile(e.target.value)} /></label>
+          <span className="caption">For example <span className="mono">models/marts/orders.sql</span> or <span className="mono">models/schema.yml</span>.</span>
+        </Modal>)}
     </div>
   );
 }

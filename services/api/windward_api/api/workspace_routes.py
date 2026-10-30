@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from ..errors import InvalidRequestError, WindwardError
 from ..kernel import KernelManager
+from ..query.catalog import CatalogService
 from ..query.uploads import MAX_BYTES, UploadService
 from ..store import Store
 
@@ -32,9 +33,14 @@ def get_uploads(request: Request) -> UploadService:
     return request.app.state.uploads
 
 
+def get_catalog(request: Request) -> CatalogService:
+    return request.app.state.catalog
+
+
 StoreDep = Annotated[Store, Depends(get_store)]
 KernelDep = Annotated[KernelManager, Depends(get_kernels)]
 UploadDep = Annotated[UploadService, Depends(get_uploads)]
+CatalogDep = Annotated[CatalogService, Depends(get_catalog)]
 
 
 class SavedQueryIn(BaseModel):
@@ -114,6 +120,57 @@ async def run_python(notebook_id: str, payload: CodeIn, kernels: KernelDep) -> d
 @router.post("/notebooks/{notebook_id}/kernel/restart", status_code=status.HTTP_204_NO_CONTENT)
 async def restart_kernel(notebook_id: str, kernels: KernelDep) -> None:
     await kernels.reset(notebook_id)
+
+
+@router.get("/notebooks/{notebook_id}/variables")
+async def kernel_variables(notebook_id: str, kernels: KernelDep) -> dict[str, Any]:
+    """What the notebook's Python kernel holds right now."""
+    return {"live": kernels.is_live(notebook_id), "variables": await kernels.variables(notebook_id)}
+
+
+# -- catalog ---------------------------------------------------------------
+@router.get("/catalog/databases")
+async def catalog_databases(catalog: CatalogDep) -> list[str]:
+    return await catalog.databases()
+
+
+@router.get("/catalog/tables")
+async def catalog_tables(catalog: CatalogDep, database: Annotated[str, Query(min_length=1)]):
+    return await catalog.tables(database)
+
+
+@router.get("/catalog/columns")
+async def catalog_columns(
+    catalog: CatalogDep,
+    database: Annotated[str, Query(min_length=1)],
+    table: Annotated[str, Query(min_length=1)],
+) -> list[dict[str, Any]]:
+    return await catalog.columns(database, table)
+
+
+@router.get("/catalog/profile")
+async def catalog_profile(
+    catalog: CatalogDep,
+    database: Annotated[str, Query(min_length=1)],
+    table: Annotated[str, Query(min_length=1)],
+) -> dict[str, Any]:
+    """Row count, null share, distinct count and range per column."""
+    return await catalog.profile(database, table)
+
+
+@router.get("/catalog/ddl")
+async def catalog_ddl(
+    catalog: CatalogDep,
+    database: Annotated[str, Query(min_length=1)],
+    table: Annotated[str, Query(min_length=1)],
+) -> dict[str, str]:
+    return {"ddl": await catalog.ddl(database, table)}
+
+
+@router.get("/catalog/search")
+async def catalog_search(catalog: CatalogDep, q: Annotated[str, Query(min_length=2)]):
+    """Tables and columns whose name contains `q`, across every database."""
+    return await catalog.search(q)
 
 
 # -- uploads ---------------------------------------------------------------

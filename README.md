@@ -71,14 +71,15 @@ SQL console. dbt 2.0.8 is installed in the image, but the project runs on the
 
 ## What you can do
 
-- **SQL console.** Tabbed editor with syntax colouring and autocomplete, Ctrl/⌘+Enter, run a selection, Format, query history, **Explain** plans, **Save** queries, results as a table or a bar/line/pie **chart**, **CSV export**.
-- **Notebooks.** SQL, Python (PySpark with `spark` ready and variables kept between cells) and text cells with execution counts, per-cell status, collapsible outputs, Run all, Shift+Enter, autosave and a restartable kernel. Stored in SQLite on the data volume.
-- **Catalog and uploads.** Browse databases and tables, see columns, a 100-row preview and table details, and **upload a CSV, TSV, JSON, JSON Lines or Parquet file** to get a queryable `uploads.<name>` table.
-- **Jobs.** Build a DAG of tasks — SQL, notebooks, Python, dbt on Sail and dbt 2 — wire dependencies, schedule it with cron, run it now, watch per-task logs and results, cancel a run. Sail and dbt 2 are independent engines, and a Job is where they meet.
+- **SQL console.** Syntax-coloured tabbed editor with autocomplete from your catalog, Format, Explain, **cancel a running query**, saved queries and a history side panel.
+- **Results.** Sort by any column, filter rows, double-click a cell to expand it, per-column statistics, and export to CSV, JSON or Markdown.
+- **Notebooks.** A **kernel variables** inspector, export to Jupyter `.ipynb`, SQL or Markdown, and SQL, Python (PySpark with `spark` ready and variables kept between cells) and text cells with execution counts, per-cell status, collapsible outputs, Run all, Shift+Enter, autosave and a restartable kernel. Stored in SQLite on the data volume.
+- **Catalog.** Browse databases and tables, **profile** a table (row count, null share, distinct count, min/max per column), preview 200 rows, read its DDL, search tables and columns across every database, drop a table, and upload CSV, TSV, JSON, JSON Lines or Parquet.
+- **Jobs.** Build a DAG of tasks — SQL, notebooks, Python, dbt on Sail and dbt 2 — in a three-pane designer. Per-task **retries**, timeouts and continue-on-failure; job **parameters** substituted as `{{ name }}`; cron schedules; **run from a task** and everything downstream. Each run has a **timeline (Gantt)**, a status graph, per-task logs and results, and can be cancelled. Sail and dbt 2 are independent engines, and a Job is where they meet.
 - **dbt 2 projects.** Create a dbt 2 project from a starter, edit its files with syntax colouring, run `seed/run/test/build`, see lineage, and query the DuckDB warehouse it builds into.
 - **dbt on Sail.** The bundled project (dbt-core 1.x + `dbt-sail`) against Sail. dbt 2 has no Sail adapter, so this is the only way to run dbt on Sail today.
-- **Workspace.** Home dashboard, ⌘K command palette, grouped and collapsible sidebar, a code editor with syntax colours, autocomplete from your catalog and SQL formatting.
-- **Engine status.** Live state of the supervised Sail processes, restarts and log tails.
+- **Workspace.** Home dashboard, ⌘K command palette, `?` for the keyboard shortcuts, grouped and collapsible sidebar, a code editor with syntax colours, autocomplete from your catalog and SQL formatting.
+- **Engine status.** Live state of the supervised Sail processes, the queries running right now (cancel one from here), recent query history, restarts and log tails, plus a **Restart engine** button that rebuilds the catalog afterwards.
 
 Stop with `docker compose down` (add `-v` to drop the data volume).
 

@@ -46,6 +46,18 @@ class KernelManager:
             worker = await self._start(notebook_id)
         return worker
 
+    async def variables(self, notebook_id: str) -> list[dict[str, Any]]:
+        """What the kernel currently holds. An unstarted kernel simply has nothing."""
+        worker = self._workers.get(notebook_id)
+        if worker is None or worker.proc.returncode is not None:
+            return []
+        reply = await self._request(worker, {"command": "variables"}, notebook_id)
+        return reply.get("variables", [])
+
+    def is_live(self, notebook_id: str) -> bool:
+        worker = self._workers.get(notebook_id)
+        return worker is not None and worker.proc.returncode is None
+
     async def run(self, notebook_id: str, code: str) -> dict[str, Any]:
         worker = await self._worker(notebook_id)
         async with worker.lock:
@@ -70,6 +82,18 @@ class KernelManager:
                     "error": "The kernel process exited unexpectedly; the next run starts a new one.",  # noqa: E501
                 }  # fmt: skip
             return json.loads(line)
+
+    async def _request(self, worker: _Worker, payload: dict[str, Any], notebook_id: str) -> dict[str, Any]:
+        async with worker.lock:
+            assert worker.proc.stdin is not None and worker.proc.stdout is not None
+            worker.proc.stdin.write((json.dumps(payload) + "\n").encode())
+            await worker.proc.stdin.drain()
+            try:
+                line = await asyncio.wait_for(worker.proc.stdout.readline(), timeout=30)
+            except TimeoutError:
+                await self.reset(notebook_id)
+                return {}
+            return json.loads(line) if line else {}
 
     async def reset(self, notebook_id: str) -> None:
         worker = self._workers.pop(notebook_id, None)

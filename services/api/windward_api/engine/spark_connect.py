@@ -58,16 +58,31 @@ class SparkConnectEngineClient:
 
     # -- EngineClient ------------------------------------------------------
 
-    def execute_sql(self, sql: str, *, max_rows: int) -> QueryResult:
+    def execute_sql(self, sql: str, *, max_rows: int, tag: str | None = None) -> QueryResult:
         try:
-            return self._execute_sql(sql, max_rows=max_rows)
+            return self._execute_sql(sql, max_rows=max_rows, tag=tag)
         except QueryFailedError as exc:
             if not _is_session_lost(str(exc)):
                 raise
         # Sail removed our session (idle timeout, or the server dropped it). The same id
         # cannot be reopened, so move to a new one and retry once.
         self.rotate_session()
-        return self._execute_sql(sql, max_rows=max_rows)
+        return self._execute_sql(sql, max_rows=max_rows, tag=tag)
+
+    def cancel(self, tag: str) -> None:
+        """Interrupt the operations tagged ``tag``.
+
+        Spark Connect tags are thread-local on the client, so the tag is attached in the
+        worker thread that runs the statement and interrupted from here, the event loop.
+        """
+        with self._lock:
+            session = self._session
+        if session is None:
+            return
+        try:
+            session.interruptTag(tag)
+        except Exception as exc:  # noqa: BLE001 - cancelling must never raise
+            logger.debug("interrupting tag %s failed: %s", tag, exc)
 
     def rotate_session(self) -> None:
         with self._lock:
@@ -81,9 +96,15 @@ class SparkConnectEngineClient:
         if self.on_session_rotated is not None:
             self.on_session_rotated()
 
-    def _execute_sql(self, sql: str, *, max_rows: int) -> QueryResult:
+    def _execute_sql(self, sql: str, *, max_rows: int, tag: str | None = None) -> QueryResult:
         session, generation = self._acquire_session()
         started = time.perf_counter()
+        if tag is not None:
+            try:
+                session.addTag(tag)
+            except Exception as exc:  # noqa: BLE001 - tagging is best effort
+                logger.debug("tagging %s failed: %s", tag, exc)
+                tag = None
         try:
             # Ask for one row more than the page so "there is more" is a fact
             # from the engine rather than a guess.
@@ -92,6 +113,12 @@ class SparkConnectEngineClient:
             table = frame.toArrow()
         except BaseException as exc:  # noqa: BLE001 - re-raised as a typed error
             raise self._translate(exc) from exc
+        finally:
+            if tag is not None:
+                try:
+                    session.removeTag(tag)
+                except Exception:  # noqa: BLE001 - the tag dies with the session anyway
+                    pass
         duration_ms = (time.perf_counter() - started) * 1000.0
 
         columns = tuple(
@@ -233,6 +260,16 @@ EMPTY_SCHEMA_WARNING = (
 
 def _warnings_for(columns: tuple[Column, ...]) -> tuple[str, ...]:
     return () if columns else (EMPTY_SCHEMA_WARNING,)
+
+
+#: Spark Connect reports an interrupted operation as an ordinary failure, so the
+#: query layer tells "the user cancelled" from "the statement failed" by message.
+CANCELLED_MARKERS = ("operation cancelled", "operation canceled", "cancelled by user", "interrupted")
+
+
+def is_cancellation(message: str) -> bool:
+    low = message.lower()
+    return any(marker in low for marker in CANCELLED_MARKERS)
 
 
 def _is_session_lost(message: str) -> bool:
