@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# CI build step. No Dockerfiles or package manifests exist yet (M0 is
-# scaffold-only, see docs/adr/0001), so the only build-equivalent artifact
-# is the preflight check every later build will depend on. Extend this
-# script with real image builds once docker/ has Dockerfiles.
+# CI build step: the OrbStack preflight, then the container images that
+# docker-compose.yml builds. Needs a reachable Docker daemon.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ./scripts/bootstrap.sh
+
+# shellcheck source=scripts/lib-compose.sh
+source scripts/lib-compose.sh
+
+echo "== compose build =="
+"${COMPOSE[@]}" build
+
 echo "build: OK"

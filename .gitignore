@@ -3,6 +3,8 @@ node_modules/
 __pycache__/
 *.pyc
 .venv/
+.ruff_cache/
+.pytest_cache/
 dist/
 .DS_Store
 .claude/

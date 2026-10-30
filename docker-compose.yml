@@ -1,15 +1,45 @@
+# One command brings up Windward on OrbStack:
+#
+#   docker compose up --build
+#
+# - api: the platform API. It supervises the Sail engine as child processes
+#   (ADR-0002) and runs dbt as a subprocess, so there is no separate engine or
+#   dbt service to order. The engine's own ports (Spark Connect 50051, Flight
+#   SQL 32010) are not published to the host: v0 has no authentication, so a
+#   host-reachable engine port is a security defect rather than a convenience.
+# - web: the browser shell (Next.js). It proxies /api/* to the api service, so the
+#   browser only ever talks to one origin.
 services:
-  sail:
-    build: ./docker/sail
-    image: windward-sail:0.7.2
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    image: windward-api:0.1.0
+    environment:
+      # Ports are configuration; the defaults come from ADR-0003.
+      WINDWARD_SPARK_CONNECT_PORT: "50051"
+      WINDWARD_FLIGHT_SQL_PORT: "32010"
     ports:
-      - "50051:50051"
+      # The platform API (OpenAPI docs at /docs).
+      - "8000:8000"
+    volumes:
+      - windward-data:/var/lib/windward/data
+    # Shutdown stops the engine children before the container is killed.
+    stop_grace_period: 30s
     restart: unless-stopped
-  sail-flight:
-    image: windward-sail:0.7.2
-    command: ["sail", "flight", "server", "--ip", "0.0.0.0", "--port", "32010"]
-    ports:
-      - "32010:32010"
+
+  web:
+    build:
+      context: apps/web
+      args:
+        API_URL: http://api:8000
+    image: windward-web:0.1.0
     depends_on:
-      - sail
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
     restart: unless-stopped
+
+volumes:
+  windward-data:

@@ -1,0 +1,11 @@
+version: 2
+
+models:
+  - name: stg_trips
+    columns:
+      - name: trip_id
+        data_tests: [unique, not_null]
+  - name: route_summary
+    columns:
+      - name: route
+        data_tests: [unique, not_null]

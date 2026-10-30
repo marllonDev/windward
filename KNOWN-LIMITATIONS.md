@@ -67,6 +67,33 @@ Sail/dbt base images until `docker/` gains real content in a later milestone
 (noted as optional item `O4` on `TES-7`). Not a defect at M0 — scope as
 designed — but recorded here so it is not mistaken for an oversight later.
 
+### dbt 2 has no Sail adapter, so dbt projects run on the Python `dbt-sail` runner
+
+The dbt 2 Rust CLI (v2.0.8) is installed in the API image and reports its
+version in the dbt panel, but it cannot target Sail: its built-in adapters are
+Snowflake, BigQuery, Databricks, Redshift, Postgres and DuckDB, and it does not
+support out-of-tree adapters. `dbt run/build/seed/test` from the shell therefore
+execute on `dbt-core` 1.12.6 plus `dbt-sail` 0.1.0 (the fallback ADR-0002
+"Dissent" recommended; see ADR-0006). Swapping to dbt 2 is a `DbtRunner` change
+once a Sail adapter exists.
+
+### Sail's catalog is per session; dbt and the console share one session id
+
+Sail 0.7.2 keeps table metadata in an in-memory catalog scoped to a Spark
+Connect session. dbt runs in a separate process, so by default its tables are
+invisible to the SQL console. Windward pins one session id
+(`WINDWARD_ENGINE_SESSION_ID`) that both the API's query client and the dbt
+profile open, and the profile smuggles that id through the `host` field because
+`dbt-sail` builds `sc://<host>:<port>` itself. Consequences: the catalog is lost
+when the engine restarts (re-run `dbt build` to rebuild it), and the console and
+dbt are one logical session, not isolated ones.
+
+### Sail 0.7.2 cannot load a typed mixed-literal `INSERT ... VALUES`
+
+dbt's seed loader failed with `Unsupported CAST from Decimal128(2, 1) to
+Boolean` when the CSV mixed booleans and decimals. The demo seed therefore loads
+every column as `string` and the staging model casts them.
+
 ## Product behavior
 
 Not yet applicable: M0 ships no application code (`apps/web`, `services/api`,

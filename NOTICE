@@ -18,12 +18,23 @@ or depended upon under their own license terms:
   Licensed under the Apache License, Version 2.0, per that repository's
   root LICENSE file. Verified against the GA release tag v2.0.0
   (2026-09-14). Windward has not yet pinned an exact commit/tag for
-  this dependency (tracked for M1); re-read the LICENSE file at the
+  this dependency; it is now pinned to v2.0.8 in docker/api/Dockerfile
+  (checksum-verified binary). Re-read the LICENSE file at the
   exact commit pinned, since dbt Labs separately distributes a
   proprietary "dbt" product that bundles additional, non-public
   components under its own Product Licensing Agreement. Windward
   depends only on the public, Apache-2.0 contents of the
   dbt-labs/dbt repository, not that proprietary distribution.
+
+* dbt-core, dbt-spark and dbt-sail (https://github.com/dbt-labs/dbt-core,
+  https://github.com/dbt-labs/dbt-adapters, https://github.com/lakehq/dbt-sail)
+  Copyright dbt Labs, Inc., LakeSail and contributors.
+  Licensed under the Apache License, Version 2.0. Installed in the API image
+  as the runner that executes dbt projects against Sail (ADR-0006).
+
+* Next.js and React (https://github.com/vercel/next.js,
+  https://github.com/facebook/react), used by the web shell.
+  Licensed under the MIT License.
 
 "LakeSail", "Sail", and "dbt" are trademarks or registered trademarks of
 their respective owners. Use of these names in this NOTICE is for

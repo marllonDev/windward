@@ -12,7 +12,7 @@ cloud account and no infrastructure spend for v0.
 ## Repository layout
 
 ```
-apps/web        frontend
+apps/web        Next.js web shell
 services/api    backend API
 engine/         Sail integration
 dbt/            seeded dbt 2 project, profile template, sail adapter pin
@@ -50,13 +50,26 @@ result.
 This is re-verifiable from clean: delete all Docker volumes and OrbStack
 VM state, start OrbStack, and re-run `./scripts/bootstrap.sh`.
 
-At this milestone (M0) the repository is scaffold and configuration
-only — no `docker-compose.yml` or Dockerfiles exist yet, so
-`docker compose up` is not yet available. That lands in a later
-milestone once `apps/web`, `services/api`, `engine/`, and `dbt/` have
-real content; this README will be updated at that point to document the
-single `docker compose up` command for the full engine/API/web/seed-data
-stack.
+## Run the stack
+
+```sh
+docker compose up --build
+```
+
+Then open **http://localhost:3000**. Everything runs in containers:
+
+| Service | What it is | Published |
+|---|---|---|
+| `web` | Next.js shell: SQL console, catalog, query history, dbt panel, engine status | `3000` |
+| `api` | Platform API (FastAPI). Supervises the Sail engine, runs dbt, serves `/api/v1` (docs at `/docs`) | `8000` |
+
+Sail's Spark Connect (`50051`) and Flight SQL (`32010`) ports live inside the `api`
+container and are never published. The seeded dbt project is in `dbt/`: open the
+**dbt project** tab and press **dbt build**, then query `demo.route_summary` in the
+SQL console. dbt 2.0.8 is installed in the image, but the project runs on the
+`dbt-sail` runner because dbt 2 has no Sail adapter (`docs/adr/0006`).
+
+Stop with `docker compose down` (add `-v` to drop the data volume).
 
 ## CI
 

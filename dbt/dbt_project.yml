@@ -1,0 +1,31 @@
+name: windward_demo
+version: "0.1.0"
+config-version: 2
+profile: windward
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  windward_demo:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  windward_demo:
+    +file_format: parquet
+    # Sail 0.7.2 cannot insert a mixed typed-literal VALUES list (it fails with
+    # "Unsupported CAST from Decimal128 to Boolean"), so seeds load as strings and
+    # the staging models own the typing. See KNOWN-LIMITATIONS.md.
+    trips:
+      +column_types:
+        trip_id: string
+        route: string
+        fare: string
+        distance_nm: string
+        completed: string
+        sailed_on: string

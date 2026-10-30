@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# CI test step. At this milestone there is no application code, so this
-# verifies the scaffold invariants fixed by docs/adr/0001: the directory
-# layout exists and the pinned toolchain files are present and non-empty.
-# Extend this script with real test runners once apps/web, services/api,
-# engine/, and dbt/ have content.
+# CI test step: the scaffold invariants from docs/adr/0001, then the platform
+# API's integration suite.
+#
+# The API suite is not mocked. It starts a real Sail engine as a child of the
+# application under test, which needs no Docker and no running OrbStack --
+# `pysail` ships the engine as a wheel. Extend this script as apps/web and
+# dbt/ gain content.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -27,4 +29,9 @@ done
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
+
+echo "== platform API integration suite (live Sail) =="
+PYTHON="$(scripts/api-venv.sh)"
+(cd services/api && "$PYTHON" -m pytest)
+
 echo "test: OK"

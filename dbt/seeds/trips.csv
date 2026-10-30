@@ -1,0 +1,7 @@
+trip_id,route,fare,distance_nm,completed,sailed_on
+1,Harbour run,128.40,12.5,true,2026-01-03
+2,Leeward loop,9.05,3.25,false,2026-01-04
+3,Harbour run,64.20,6.1,true,2026-01-05
+4,Windward beat,4211.99,88.125,true,2026-02-01
+5,Leeward loop,18.10,3.25,true,2026-02-02
+6,Windward beat,3980.50,84.0,false,2026-02-09

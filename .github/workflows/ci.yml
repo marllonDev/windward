@@ -16,12 +16,22 @@ jobs:
           tar -xzf actionlint.tar.gz actionlint
           sudo mv actionlint /usr/local/bin/actionlint
           rm actionlint.tar.gz
+      - name: Install uv 0.12.5
+        run: |
+          curl -sSL "https://astral.sh/uv/0.12.5/install.sh" | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: ./scripts/ci-lint.sh
 
   test:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4.2.2
+      # scripts/api-venv.sh builds the platform API environment with uv, which
+      # also provides the pinned Python from .python-version.
+      - name: Install uv 0.12.5
+        run: |
+          curl -sSL "https://astral.sh/uv/0.12.5/install.sh" | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: ./scripts/ci-test.sh
 
   build:

@@ -1,0 +1,18 @@
+# The profile the platform API points dbt at. Sail is the supervised child of
+# the API container, so Spark Connect is on loopback (ADR-0003: dbt uses the
+# statement-shaped path; dbt 2 has no Sail adapter, so the ADR-0002 Python
+# fallback `dbt-sail` runs here).
+windward:
+  target: dev
+  outputs:
+    dev:
+      type: sail
+      mode: remote
+      # dbt-sail builds `sc://<host>:<port>`. Smuggling the port and the shared
+      # session id through `host` makes the URL `sc://127.0.0.1:50051/;session_id=<id>;x=:50051`
+      # (the trailing `x=` absorbs the appended port), so dbt and the API's query
+      # client share one Sail session and therefore one catalog.
+      host: "127.0.0.1:{{ env_var('WINDWARD_SPARK_CONNECT_PORT', '50051') }}/;session_id={{ env_var('WINDWARD_ENGINE_SESSION_ID', '5a11a11a-0000-4000-8000-000000000001') }};x="
+      port: "{{ env_var('WINDWARD_SPARK_CONNECT_PORT', '50051') | as_number }}"
+      schema: demo
+      threads: 1
